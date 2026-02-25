@@ -1,6 +1,6 @@
 # ---- Base ----
 FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat su-exec
 WORKDIR /app
 
 # ---- Dependencies ----
@@ -52,7 +52,9 @@ RUN mkdir -p /data && chown nextjs:nodejs /data
 # Create backups directory
 RUN mkdir -p /app/backups && chown nextjs:nodejs /app/backups
 
-USER nextjs
+# Copy entrypoint script (fixes volume permissions, then drops to nextjs user)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3000
 ENV PORT=3000
@@ -62,5 +64,5 @@ ENV HOSTNAME="0.0.0.0"
 ENV DATABASE_URL="file:/data/db.sqlite"
 ENV SQLITE_DB_PATH="/data/db.sqlite"
 
-# Push schema to DB on start (creates tables if missing), then start the app
-CMD npx prisma db push --skip-generate && npm start
+# Entrypoint runs as root to fix /data perms, then exec's as nextjs
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
