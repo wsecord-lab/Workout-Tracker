@@ -22,6 +22,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Provide a dummy DATABASE_URL so `next build` can compile without a real DB
 ENV DATABASE_URL="file:./build-placeholder.db"
 RUN npx prisma generate
+RUN npx prisma db push
 RUN npm run build
 
 # ---- Production ----
