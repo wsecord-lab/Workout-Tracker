@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// —— Auth (Auth.js / NextAuth v5) ———
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String?
+  role          String    // "client" | "trainer" | "admin"
+  createdAt     DateTime  @default(now())
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  clientProfile Client?
+  measurements  Measurement[]
+  assignedAsTrainer TrainerClient[]  @relation("TrainerAssignments")
+  assignedClients   TrainerClient[]  @relation("AssignedClients")
+  passwordResetTokens PasswordResetToken[]
+  auditLogs     AuditLog[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// —— App: Client profile (linked to User when role=client) ———
+model Client {
+  id            String    @id @default(cuid())
+  userId        String?   @unique
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name          String
+  age           Int
+  heightCm      Float
+  bodyWeightKg  Float
+  sessions      WorkoutSession[]
+  weightRecords ClientWeightRecord[]
+}
+
+model ClientWeightRecord {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  weightKg  Float
+  recordedAt DateTime @default(now())
+
+  @@index([clientId, recordedAt])
+}
+
+model TrainerClient {
+  id         String   @id @default(cuid())
+  trainerId  String
+  clientId   String
+  trainer    User     @relation("TrainerAssignments", fields: [trainerId], references: [id], onDelete: Cascade)
+  client     User     @relation("AssignedClients", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([trainerId, clientId])
+}
+
+model Measurement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weightKg  Float
+  heightCm  Float
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+}
+
+// —— Workouts (existing app) ———
+model WorkoutSession {
+  id         String    @id @default(cuid())
+  date       DateTime  @default(now())
+  clientId   String
+  client     Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  exercises  Exercise[]
+
+  @@index([clientId, date])
+}
+
+model Exercise {
+  id        String   @id @default(cuid())
+  name      String
+  sessionId String
+  session   WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sets      Set[]
+
+  @@index([sessionId])
+}
+
+model Set {
+  id         String   @id @default(cuid())
+  weightKg   Float
+  reps       Int
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
+}

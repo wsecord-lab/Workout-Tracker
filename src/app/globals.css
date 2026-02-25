@@ -1,0 +1,65 @@
+@import "../styles/theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-[var(--text)] antialiased;
+  }
+}
+
+/* Button: primary */
+.btn-primary {
+  @apply rounded bg-primary px-4 py-2 font-medium text-white outline-none transition-colors
+    hover:bg-primary-hover active:bg-primary-active
+    focus:ring-2 focus:ring-primary focus:ring-offset-2
+    disabled:bg-primary-disabled disabled:opacity-70 disabled:pointer-events-none;
+}
+
+/* Button: secondary */
+.btn-secondary {
+  @apply rounded border border-border bg-surface px-4 py-2 font-medium text-[var(--text)] outline-none transition-colors
+    hover:bg-background hover:border-secondary
+    focus:ring-2 focus:ring-primary focus:ring-offset-2
+    disabled:opacity-50 disabled:pointer-events-none;
+}
+
+/* Form inputs */
+.input {
+  @apply w-full rounded border border-border bg-surface px-3 py-2 text-[var(--text)] outline-none
+    placeholder:text-muted
+    focus:border-primary focus:ring-1 focus:ring-primary
+    disabled:opacity-50;
+}
+
+/* Card */
+.card {
+  @apply rounded border border-border bg-surface p-4;
+}
+
+/* Table */
+.table-header {
+  @apply border-b border-border bg-background px-4 py-2 text-sm font-medium text-muted;
+}
+.table-cell {
+  @apply border-b border-border px-4 py-2 last:border-0;
+}
+
+/* Badge */
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+.badge-success {
+  @apply badge text-success;
+  background-color: color-mix(in srgb, var(--success) 15%, transparent);
+}
+.badge-error {
+  @apply badge text-error;
+  background-color: color-mix(in srgb, var(--error) 15%, transparent);
+}
+.badge-muted {
+  @apply badge text-secondary;
+  background-color: color-mix(in srgb, var(--secondary) 15%, transparent);
+}

@@ -1,0 +1,26 @@
+/* LifeSport Athletic Club — centralized theme (CSS variables) */
+:root {
+  --primary: #6f8a28;
+  --primary-hover: #5f7722;
+  --primary-active: #4d601b;
+  --primary-disabled: #a8b878;
+  --secondary: #8d8d8d;
+  --secondary-hover: #7a7a7a;
+  --background: #f5f5f5;
+  --surface: #ffffff;
+  --text: #1f1f1f;
+  --muted-text: #6b7280;
+  --border: #e5e7eb;
+  --success: #4caf50;
+  --success-hover: #43a047;
+  --error: #d32f2f;
+  --error-hover: #b71c1c;
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary);
+  /* Chart palette (6 colors derived from green/gray) */
+  --chart-1: #6f8a28;
+  --chart-2: #8d8d8d;
+  --chart-3: #4a4a4a;
+  --chart-4: #9ba85c;
+  --chart-5: #a8a8a8;
+  --chart-6: #5c5c5c;
+}
