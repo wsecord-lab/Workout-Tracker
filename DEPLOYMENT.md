@@ -8,33 +8,81 @@
 
 - Vercel (serverless, ephemeral)
 - AWS Lambda (ephemeral)
+- Firebase (serverless)
 - Any platform where the filesystem is reset between invocations
 
-### Recommended hosting patterns
+---
 
-**Option A: Single instance + persistent volume**
+## Railway Deployment (Recommended)
 
-- **Railway**: Add a volume, mount at `/data`, set `DATABASE_URL=file:/data/db.sqlite`
-- **Render**: Use a persistent disk (if available for your plan)
-- **Fly.io**: Use a volume: `fly volumes create db_data`, mount at `/data`
-- **DigitalOcean App Platform**: Use a persistent storage component
-- **Self-hosted VPS** (DigitalOcean, Linode, etc.): DB file on the server disk
+This project is configured for Railway with a Dockerfile and persistent volume for SQLite.
 
-**Option B: Configuring the DB path**
+### Prerequisites
 
-Set `DATABASE_URL` in your environment:
+1. A [Railway](https://railway.app) account (sign up with GitHub)
+2. Your code pushed to a GitHub repository
+3. (Optional) [Railway CLI](https://docs.railway.app/guides/cli) installed
 
+### Step-by-step
+
+#### 1. Create a new project on Railway
+
+- Go to [railway.app/new](https://railway.app/new)
+- Select **"Deploy from GitHub repo"**
+- Connect your GitHub account and select the `Workout-Tracker` repository
+- Railway will auto-detect the `Dockerfile` and `railway.toml`
+
+#### 2. Add a persistent volume
+
+This is **critical** — without it your database is lost on every deploy.
+
+- In your Railway service, go to **Settings → Volumes**
+- Click **"Add Volume"**
+- Set **Mount Path** to `/data`
+- Give it a name like `sqlite-data`
+- Click **Save**
+
+#### 3. Set environment variables
+
+In your Railway service, go to **Variables** and add:
+
+| Variable | Value | Required |
+|---|---|---|
+| `DATABASE_URL` | `file:/data/db.sqlite` | Yes |
+| `SQLITE_DB_PATH` | `/data/db.sqlite` | Recommended |
+| `ACCESS_TOKEN` | A long random secret (32+ chars) | Recommended |
+| `NODE_ENV` | `production` | Auto-set by Railway |
+
+Generate an access token:
 ```bash
-# Relative to prisma/schema.prisma (./dev.db = prisma/dev.db)
-DATABASE_URL="file:./dev.db"
-
-# Absolute path (recommended for production)
-DATABASE_URL="file:/var/data/workout-tracker/db.sqlite"
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Optional: `SQLITE_DB_PATH` overrides the path used by the backup script (e.g. `/var/data/workout-tracker/db.sqlite`). If unset, the backup script parses `DATABASE_URL` to get the file path.
+#### 4. Deploy
 
-**Example: Fly.io with volume**
+Railway auto-deploys when you push to your default branch. You can also trigger a manual deploy from the Railway dashboard.
+
+The Dockerfile's CMD runs `prisma db push` on every start, so your schema is always up to date.
+
+#### 5. Access the app
+
+- Railway gives you a public URL like `https://workout-tracker-production-xxxx.up.railway.app`
+- If you set `ACCESS_TOKEN`, set the cookie in your browser (DevTools → Console):
+  ```javascript
+  document.cookie = "access_token=YOUR_TOKEN_HERE; path=/; max-age=31536000; SameSite=Lax";
+  ```
+- Refresh the page.
+
+#### 6. Custom domain (optional)
+
+- In Railway: **Settings → Networking → Custom Domain**
+- Add your domain and configure DNS (CNAME to Railway's provided target)
+
+---
+
+### Other hosting options
+
+**Fly.io:**
 
 ```toml
 # fly.toml
@@ -44,9 +92,22 @@ Optional: `SQLITE_DB_PATH` overrides the path used by the backup script (e.g. `/
 ```
 
 ```bash
-# Set in Fly secrets
 fly secrets set DATABASE_URL="file:/data/db.sqlite"
 ```
+
+**Render / DigitalOcean / Self-hosted VPS:** Use a persistent disk and set `DATABASE_URL` to an absolute path.
+
+### Configuring the DB path
+
+```bash
+# Relative to prisma/schema.prisma (./dev.db = prisma/dev.db)
+DATABASE_URL="file:./dev.db"
+
+# Absolute path (recommended for production)
+DATABASE_URL="file:/data/db.sqlite"
+```
+
+Optional: `SQLITE_DB_PATH` overrides the path used by the backup script. If unset, the backup script parses `DATABASE_URL`.
 
 ---
 
