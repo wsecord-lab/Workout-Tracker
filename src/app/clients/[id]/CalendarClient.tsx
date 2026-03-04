@@ -23,12 +23,14 @@ type Props = {
   sessions: CalendarSession[];
 };
 
-export function CalendarClient({ clientId, clientName, year, month, sessions }: Props) {
+export function CalendarClient({ clientId, clientName, year, month, sessions: sessionsProp }: Props) {
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const sessions = Array.isArray(sessionsProp) ? sessionsProp : [];
 
   const { sessionsByDay, gridWeeks } = useMemo(() => {
     const byDay: Record<string, CalendarSession[]> = {};
     for (const s of sessions) {
+      if (!s || typeof s.date !== "string") continue;
       const key = toDateKey(s.date);
       if (!byDay[key]) byDay[key] = [];
       byDay[key].push(s);
@@ -117,11 +119,11 @@ export function CalendarClient({ clientId, clientName, year, month, sessions }: 
                   <button
                     key={di}
                     type="button"
-                    onClick={() => setSelectedDateKey(hasSessions ? dateKey : null)}
+                    onClick={() => setSelectedDateKey(dateKey)}
                     className={`min-h-[80px] border-b border-border p-2 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-inset rounded-none ${
                       hasSessions
                         ? "bg-primary/10 hover:bg-primary/20 cursor-pointer"
-                        : "bg-surface hover:bg-background cursor-default"
+                        : "bg-surface hover:bg-background cursor-pointer"
                     } ${isSelected ? "ring-2 ring-primary ring-inset" : ""}`}
                   >
                     <span className="text-sm font-medium text-[var(--text)]">{day}</span>
@@ -152,9 +154,13 @@ export function CalendarClient({ clientId, clientName, year, month, sessions }: 
             </button>
           </div>
           <div className="space-y-4">
-            {selectedSessions.map((session) => (
-              <SessionContentReadOnly key={session.id} session={session} />
-            ))}
+            {selectedSessions.length === 0 ? (
+              <p className="text-sm text-muted">No sessions on this day.</p>
+            ) : (
+              selectedSessions.map((session) => (
+                <SessionContentReadOnly key={session.id} session={session} />
+              ))
+            )}
           </div>
         </div>
       )}

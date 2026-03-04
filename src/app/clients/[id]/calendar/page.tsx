@@ -32,22 +32,22 @@ export default async function ClientCalendarPage({
 
   const sessionsRaw = await getClientSessionsInMonth({ clientId: id, year, month });
   const sessions = sessionsRaw.map((s) => ({
-    id: s.id,
-    name: s.name,
-    date: s.date.toISOString(),
-    clientId: s.clientId,
+    id: String(s.id),
+    name: s.name != null ? String(s.name) : null,
+    date: new Date(s.date).toISOString(),
+    clientId: String(s.clientId),
     exercises: (s.exercises ?? []).map((e) => ({
-      id: e.id,
-      name: e.name,
-      sessionId: e.sessionId,
-      catalogExerciseId: e.catalogExerciseId,
+      id: String(e.id),
+      name: String(e.name ?? ""),
+      sessionId: String(e.sessionId),
+      catalogExerciseId: e.catalogExerciseId != null ? String(e.catalogExerciseId) : null,
       sets: (e.sets ?? []).map((set) => ({
-        id: set.id,
-        weightKg: set.weightKg,
-        reps: set.reps,
-        rpe: set.rpe,
-        notes: set.notes,
-        exerciseId: set.exerciseId,
+        id: String(set.id),
+        weightKg: Number(set.weightKg) || 0,
+        reps: Number(set.reps) || 0,
+        rpe: set.rpe != null ? Number(set.rpe) : null,
+        notes: set.notes != null ? String(set.notes) : null,
+        exerciseId: String(set.exerciseId),
       })),
     })),
   }));
