@@ -10,6 +10,7 @@ import { formatHeight, formatWeight } from "@/lib/units";
 import { getProgressByExercise } from "@/lib/progress";
 import { createSession } from "@/app/actions/sessions";
 import { listExerciseCatalog } from "@/app/actions/exercises";
+import { requireUser, assertClientAccess } from "@/lib/authz";
 import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
@@ -25,6 +26,9 @@ export default async function ClientDetailPage({
   searchParams: Promise<{ take?: string }>;
 }) {
   const { id } = await params;
+  await requireUser();
+  await assertClientAccess(id);
+
   const { take: takeParam } = await searchParams;
   const take = Math.min(
     Math.max(parseInt(takeParam ?? "20", 10) || 20, 20),

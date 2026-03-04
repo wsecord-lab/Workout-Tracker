@@ -1,31 +1,25 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { auth } from "@/auth";
 
-/**
- * Trainer-only access gate: when ACCESS_TOKEN is set, all requests must include
- * header "x-access-token: <token>" or cookie "access_token=<token>".
- * When ACCESS_TOKEN is not set, all requests are allowed.
- */
-export function middleware(req: NextRequest) {
-  const token = process.env.ACCESS_TOKEN;
+const PROTECTED_PREFIXES = ["/clients", "/dashboard"];
 
-  // No gate if ACCESS_TOKEN is not set
-  if (!token || token === "") {
-    return NextResponse.next();
-  }
-
-  const headerToken = req.headers.get("x-access-token");
-  const cookieToken = req.cookies.get("access_token")?.value;
-  const provided = headerToken ?? cookieToken;
-
-  if (provided === token) {
-    return NextResponse.next();
-  }
-
-  return new NextResponse("Access denied. Provide valid x-access-token header or access_token cookie.", {
-    status: 401,
-  });
+function isProtected(pathname: string): boolean {
+  if (pathname === "/") return true;
+  return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
+
+export default auth((req) => {
+  const pathname = req.nextUrl.pathname;
+  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth") || pathname.startsWith("/auth/redirect")) {
+    return NextResponse.next();
+  }
+  if (isProtected(pathname) && !req.auth) {
+    const login = new URL("/login", req.url);
+    login.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(login);
+  }
+  return NextResponse.next();
+});
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],

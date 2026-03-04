@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { assertClientAccess } from "@/lib/authz";
 
 export async function listExerciseCatalog(): Promise<{ id: string; name: string }[]> {
   const list = await prisma.exerciseCatalog.findMany({
@@ -29,6 +30,7 @@ export async function createExercise(
 ): Promise<void> {
   const session = await prisma.workoutSession.findUnique({ where: { id: sessionId }, include: { client: true } });
   if (!session) return;
+  await assertClientAccess(session.clientId);
   if (catalogExerciseId) {
     const catalog = await prisma.exerciseCatalog.findUnique({ where: { id: catalogExerciseId }, select: { name: true } });
     if (!catalog) return;
@@ -54,6 +56,7 @@ export async function deleteExercise(exerciseId: string): Promise<void> {
     include: { session: true },
   });
   if (!exercise) return;
+  await assertClientAccess(exercise.session.clientId);
   await prisma.exercise.delete({ where: { id: exerciseId } });
   revalidatePath(`/clients/${exercise.session.clientId}`);
 }

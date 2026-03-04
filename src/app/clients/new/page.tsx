@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/app/actions/clients";
 import { ClientForm } from "@/app/clients/ClientForm";
+import { requireTrainer } from "@/lib/authz";
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  await requireTrainer();
   return (
     <div>
       <div className="mb-6 flex items-center gap-4">

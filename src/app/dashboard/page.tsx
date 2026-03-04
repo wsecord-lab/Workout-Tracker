@@ -1,28 +1,24 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { formatHeight, formatWeight } from "@/lib/units";
-import { requireUser, getClientIdForCurrentUser } from "@/lib/authz";
+import { requireTrainer } from "@/lib/authz";
 
-export default async function HomePage() {
-  const user = await requireUser();
-  const clientId = await getClientIdForCurrentUser();
-  if (user.role === "CLIENT" && clientId) redirect(`/clients/${clientId}`);
+export default async function DashboardPage() {
+  await requireTrainer();
 
   const clients = await prisma.client.findMany({
     orderBy: { name: "asc" },
   });
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[var(--text)]">Clients</h1>
-        <Link
-          href="/clients/new"
-          className="btn-primary text-sm"
-        >
+        <h1 className="text-2xl font-bold text-[var(--text)]">Dashboard</h1>
+        <Link href="/clients/new" className="btn-primary text-sm">
           Add Client
         </Link>
       </div>
+      <p className="mb-4 text-sm text-muted">All clients</p>
       <ul className="divide-y divide-border rounded border border-border bg-surface">
         {clients.length === 0 ? (
           <li className="px-4 py-8 text-center text-muted">No clients yet.</li>
@@ -44,6 +40,12 @@ export default async function HomePage() {
                   className="text-sm text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
                 >
                   Edit
+                </Link>
+                <Link
+                  href={`/clients/${c.id}/calendar`}
+                  className="text-sm text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                >
+                  Calendar
                 </Link>
               </div>
             </li>

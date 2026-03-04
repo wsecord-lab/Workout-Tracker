@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { assertClientAccess } from "@/lib/authz";
 import { validateSet, validateSetDetails } from "@/lib/validations";
 
 export type SetActionResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -22,6 +23,7 @@ export async function createSet(
     include: { session: true },
   });
   if (!exercise) return { ok: false, errors: { _: "Exercise not found" } };
+  await assertClientAccess(exercise.session.clientId);
   await prisma.set.create({
     data: {
       exerciseId,
@@ -49,6 +51,7 @@ export async function updateSetDetails(
     include: { exercise: { include: { session: true } } },
   });
   if (!set) return { ok: false, errors: { _: "Set not found" } };
+  await assertClientAccess(set.exercise.session.clientId);
   await prisma.set.update({
     where: { id: setId },
     data: { rpe: result.data.rpe, notes: result.data.notes },
@@ -63,6 +66,7 @@ export async function deleteSet(setId: string): Promise<void> {
     include: { exercise: { include: { session: true } } },
   });
   if (!set) return;
+  await assertClientAccess(set.exercise.session.clientId);
   await prisma.set.delete({ where: { id: setId } });
   revalidatePath(`/clients/${set.exercise.session.clientId}`);
 }

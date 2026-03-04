@@ -5,6 +5,7 @@ import { updateClient } from "@/app/actions/clients";
 import { deleteClient } from "@/app/actions/clients";
 import { ClientForm } from "@/app/clients/ClientForm";
 import { DeleteClientButton } from "@/app/clients/DeleteClientButton";
+import { requireUser, assertClientAccess } from "@/lib/authz";
 
 export default async function EditClientPage({
   params,
@@ -12,6 +13,8 @@ export default async function EditClientPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await requireUser();
+  await assertClientAccess(id);
   const client = await prisma.client.findUnique({ where: { id } });
   if (!client) notFound();
   const boundUpdate = updateClient.bind(null, id);

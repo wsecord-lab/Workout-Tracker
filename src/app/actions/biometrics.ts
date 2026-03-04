@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { assertClientAccess } from "@/lib/authz";
 import { toStorage } from "@/lib/units";
 
 export type BiometricResult =
@@ -28,6 +29,7 @@ export async function addBiometricRecord(
 
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) return { ok: false, errors: { weightLb: "Client not found" } };
+  await assertClientAccess(clientId);
 
   await prisma.clientWeightRecord.create({
     data: {

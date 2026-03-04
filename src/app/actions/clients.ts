@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { validateClient } from "@/lib/validations";
 
 export type ClientActionResult =
@@ -9,6 +10,7 @@ export type ClientActionResult =
   | { ok: false; errors: Record<string, string> };
 
 export async function createClient(formData: FormData): Promise<ClientActionResult> {
+  await requireTrainer();
   const result = validateClient({
     name: formData.get("name"),
     age: formData.get("age"),
@@ -39,6 +41,7 @@ export async function updateClient(
     bodyWeightLb: formData.get("bodyWeightLb"),
   });
   if (!result.ok) return { ok: false, errors: result.errors };
+  await assertClientAccess(id);
   const existing = await prisma.client.findUnique({ where: { id } });
   await prisma.client.update({ where: { id }, data: result.data });
   if (existing && existing.bodyWeightKg !== result.data.bodyWeightKg) {
@@ -53,6 +56,30 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<void> {
+  await assertClientAccess(id);
   await prisma.client.delete({ where: { id } });
   revalidatePath("/");
+}
+
+/** Trainer-only: link a client profile to a user account by email. */
+export async function linkUserToClient(
+  clientId: string,
+  email: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireTrainer();
+  const client = await prisma.client.findUnique({ where: { id: clientId } });
+  if (!client) return { ok: false, error: "Client not found" };
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) return { ok: false, error: "Email is required" };
+  const user = await prisma.user.findUnique({ where: { email: trimmed } });
+  if (!user) return { ok: false, error: "User not found with that email" };
+  if (user.role !== "CLIENT") return { ok: false, error: "User is not a client account" };
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { userId: user.id },
+  });
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  return { ok: true };
 }

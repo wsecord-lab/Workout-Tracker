@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getClientSessionsInMonth } from "@/lib/db/workouts";
+import { requireUser, assertClientAccess } from "@/lib/authz";
 import { CalendarClient } from "../CalendarClient";
 
 export default async function ClientCalendarPage({
@@ -12,6 +13,9 @@ export default async function ClientCalendarPage({
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
   const { id } = await params;
+  await requireUser();
+  await assertClientAccess(id);
+
   const { year: yearParam, month: monthParam } = await searchParams;
 
   const client = await prisma.client.findUnique({
