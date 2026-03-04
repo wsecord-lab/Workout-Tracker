@@ -30,7 +30,27 @@ export default async function ClientCalendarPage({
     12
   );
 
-  const sessions = await getClientSessionsInMonth({ clientId: id, year, month });
+  const sessionsRaw = await getClientSessionsInMonth({ clientId: id, year, month });
+  const sessions = sessionsRaw.map((s) => ({
+    id: s.id,
+    name: s.name,
+    date: s.date.toISOString(),
+    clientId: s.clientId,
+    exercises: (s.exercises ?? []).map((e) => ({
+      id: e.id,
+      name: e.name,
+      sessionId: e.sessionId,
+      catalogExerciseId: e.catalogExerciseId,
+      sets: (e.sets ?? []).map((set) => ({
+        id: set.id,
+        weightKg: set.weightKg,
+        reps: set.reps,
+        rpe: set.rpe,
+        notes: set.notes,
+        exerciseId: set.exerciseId,
+      })),
+    })),
+  }));
 
   return (
     <div>

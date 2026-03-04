@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { SessionWithExercisesAndSets } from "@/lib/db/workouts";
+import type { CalendarSession } from "./SessionContentReadOnly";
 import { SessionContentReadOnly } from "./SessionContentReadOnly";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function toDateKey(d: Date): string {
+function toDateKey(dateInput: string | Date): string {
+  const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -19,16 +20,16 @@ type Props = {
   clientName: string;
   year: number;
   month: number;
-  sessions: SessionWithExercisesAndSets[];
+  sessions: CalendarSession[];
 };
 
 export function CalendarClient({ clientId, clientName, year, month, sessions }: Props) {
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const { sessionsByDay, gridWeeks } = useMemo(() => {
-    const byDay: Record<string, SessionWithExercisesAndSets[]> = {};
+    const byDay: Record<string, CalendarSession[]> = {};
     for (const s of sessions) {
-      const key = toDateKey(new Date(s.date));
+      const key = toDateKey(s.date);
       if (!byDay[key]) byDay[key] = [];
       byDay[key].push(s);
     }
