@@ -19,7 +19,9 @@ export function ProgressTables({ progress }: { progress: ProgressByExercise[] })
                 <tr key={row.sessionId} className="border-b border-border last:border-0">
                   <td className="table-cell">
                     {new Date(row.sessionDate).toLocaleDateString("en-US", {
-                      dateStyle: "medium",
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
                     })}
                   </td>
                   <td className="table-cell">

@@ -14,7 +14,11 @@ type CatalogItem = { id: string; name: string };
 function formatSessionDate(date: Date): string {
   const d = new Date(date);
   const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
-  const medium = d.toLocaleDateString("en-US", { dateStyle: "medium" });
+  const medium = d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
   return `${weekday} · ${medium}`;
 }
 

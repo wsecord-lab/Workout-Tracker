@@ -54,7 +54,9 @@ export function SessionContentReadOnly({ session }: { session: CalendarSession }
   if (!session || typeof session.date !== "string") return null;
   const dateStr = new Date(session.date).toLocaleDateString("en-US", {
     weekday: "short",
-    dateStyle: "medium",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
   const name = (session.name != null ? String(session.name) : "").trim() || "Session";
   const exercises = Array.isArray(session.exercises) ? session.exercises : [];
