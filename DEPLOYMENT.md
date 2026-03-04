@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node 20+
+- Node 20.x (pinned in `package.json` engines for Vercel)
 - GitHub account
 - [Neon](https://neon.tech) account (free tier) or any Postgres provider
 
