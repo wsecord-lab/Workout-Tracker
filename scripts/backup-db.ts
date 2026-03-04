@@ -1,12 +1,11 @@
 /**
- * Backup SQLite database to backups/ with timestamped filename.
- * Uses SQLITE_DB_PATH if set, otherwise parses DATABASE_URL for file path.
- * Load .env from project root so env vars are available when run standalone.
+ * Backup script. For PostgreSQL, use your provider's backup (Neon, etc.).
+ * This script only supported SQLite file copy; with Postgres, backups are managed by the DB provider.
  */
 import fs from "node:fs";
 import path from "node:path";
 
-// Load .env from project root (standalone script, no Next.js)
+// Load .env from project root (standalone script)
 const envPath = path.join(process.cwd(), ".env");
 if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, "utf-8");
@@ -20,25 +19,24 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-function getDbPath(): string {
-  if (process.env.SQLITE_DB_PATH) {
-    return path.resolve(process.cwd(), process.env.SQLITE_DB_PATH);
-  }
-  const url = process.env.DATABASE_URL;
-  if (!url || !url.startsWith("file:")) {
-    throw new Error(
-      "DATABASE_URL must be set and use file: protocol (e.g. file:./dev.db). " +
-        "Or set SQLITE_DB_PATH to the db file path."
-    );
-  }
-  const filePath = url.replace(/^file:/, "").trim();
-  // Prisma resolves relative paths from schema dir (prisma/), so ./dev.db -> prisma/dev.db
-  if (path.isAbsolute(filePath)) return filePath;
-  const prismaDir = path.join(process.cwd(), "prisma");
-  return path.resolve(prismaDir, filePath);
+const url = process.env.DATABASE_URL ?? "";
+if (url.startsWith("postgres")) {
+  console.log(
+    "PostgreSQL in use. Backups: use your provider's tools (e.g. Neon dashboard, pg_dump)."
+  );
+  process.exit(0);
 }
 
-const dbPath = getDbPath();
+const dbUrl = process.env.DATABASE_URL;
+if (!dbUrl?.startsWith("file:")) {
+  console.error("DATABASE_URL must use file: protocol for SQLite backup.");
+  process.exit(1);
+}
+
+const filePath = dbUrl.replace(/^file:/, "").trim();
+const dbPath = path.isAbsolute(filePath)
+  ? filePath
+  : path.resolve(process.cwd(), "prisma", filePath);
 const backupsDir = path.join(process.cwd(), "backups");
 
 if (!fs.existsSync(dbPath)) {

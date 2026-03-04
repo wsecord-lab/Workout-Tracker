@@ -21,7 +21,6 @@ function optionalEnv(name: string): string | undefined {
 
 export type Env = {
   DATABASE_URL: string;
-  SQLITE_DB_PATH: string | undefined;
   ACCESS_TOKEN: string | undefined;
   NODE_ENV: string;
 };
@@ -36,10 +35,9 @@ export function getEnv(): Env {
   if (cached) return cached;
 
   const DATABASE_URL = requireEnv("DATABASE_URL");
-  const SQLITE_DB_PATH = optionalEnv("SQLITE_DB_PATH");
   const ACCESS_TOKEN = optionalEnv("ACCESS_TOKEN");
   const NODE_ENV = process.env.NODE_ENV ?? "development";
 
-  cached = { DATABASE_URL, SQLITE_DB_PATH, ACCESS_TOKEN, NODE_ENV };
+  cached = { DATABASE_URL, ACCESS_TOKEN, NODE_ENV };
   return cached;
 }

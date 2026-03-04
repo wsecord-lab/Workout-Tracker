@@ -1,6 +1,6 @@
 # Workout Tracker MVP
 
-Local-first workout tracking for a personal trainer: clients, sessions, exercises, and sets. Data persists in SQLite.
+Workout tracking for a personal trainer: clients, sessions, exercises, and sets. PostgreSQL backend, deployable to Vercel.
 
 ## Setup (exact terminal commands)
 
@@ -8,8 +8,9 @@ Local-first workout tracking for a personal trainer: clients, sessions, exercise
 cd workout-tracker
 npm install
 cp .env.example .env
+# Edit .env and add your DATABASE_URL (PostgreSQL, e.g. from Neon)
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 npm run db:seed
 npm run dev
 ```
@@ -19,17 +20,18 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Verification checklist
 
 - [ ] `npm install`
-- [ ] `cp .env.example .env` (required; app reads `DATABASE_URL`)
+- [ ] `cp .env.example .env` and set `DATABASE_URL` (PostgreSQL connection string)
 - [ ] `npx prisma generate`
+- [ ] `npx prisma migrate deploy`
 - [ ] `npm run dev`
-- [ ] **Backup script:** `npm run db:backup` → creates `backups/dev-YYYY-MM-DDTHH-MM-SS.db`
-- [ ] **Access gate (production):** Set `ACCESS_TOKEN` in env; requests need `x-access-token` header or `access_token` cookie. See [DEPLOYMENT.md](./DEPLOYMENT.md).
+- [ ] **Deploy:** See [DEPLOYMENT.md](./DEPLOYMENT.md) for Vercel + Neon
+- [ ] **Access gate (production):** Set `ACCESS_TOKEN` in env; requests need `x-access-token` header or `access_token` cookie
 
 ## Tech stack
 
 - **Next.js 15** (App Router)
 - **TypeScript**
-- **Prisma ORM** + **SQLite** (`prisma/dev.db`)
+- **Prisma ORM** + **PostgreSQL**
 - **TailwindCSS** (minimal styling)
 - **Server actions** only (no route handlers for mutations)
 
@@ -40,7 +42,7 @@ workout-tracker/
 ├── prisma/
 │   ├── schema.prisma
 │   ├── seed.ts
-│   └── dev.db          (created after db push)
+│   └── migrations/
 ├── src/
 │   ├── app/
 │   │   ├── actions/
