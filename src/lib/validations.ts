@@ -33,7 +33,7 @@ export function validateClient(data: {
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const heightCm = Math.round(toStorage(heightIn, "height") * 100) / 100;
-  const bodyWeightKg = Math.round(toStorage(bodyWeightLb, "weight") * 1000) / 1000;
+  const bodyWeightKg = Math.round(toStorage(bodyWeightLb, "weight") * 1e6) / 1e6;
   return { ok: true, data: { name, age, heightCm, bodyWeightKg } };
 }
 
@@ -46,6 +46,6 @@ export function validateSet(data: { weightLb: unknown; reps: unknown }): { ok: t
   if (Number.isNaN(reps) || reps < 0) errors.reps = "Reps must be ≥ 0";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const weightKg = Math.round(toStorage(weightLb, "weight") * 1000) / 1000;
+  const weightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
   return { ok: true, data: { weightKg, reps } };
 }

@@ -42,13 +42,18 @@ export function toDisplay(value: number, type: UnitType): number {
   }
 }
 
+/** Round to 6 decimals for exact lb↔kg round-trip (avoids e.g. 135 lb → 134.9). */
+function round6(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
 /**
  * Convert display (Imperial) value to storage (SI) value.
  */
 export function toStorage(value: number, type: UnitType): number {
   switch (type) {
     case "weight":
-      return round1(value * LB_TO_KG);
+      return round6(value * LB_TO_KG);
     case "height":
       return round1(value * IN_TO_CM);
     case "distance":

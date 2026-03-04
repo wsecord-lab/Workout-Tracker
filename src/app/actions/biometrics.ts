@@ -24,7 +24,7 @@ export async function addBiometricRecord(
   }
   const date = parsed;
 
-  const weightKg = Math.round(toStorage(weightLb, "weight") * 1000) / 1000;
+  const weightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
 
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) return { ok: false, errors: { weightLb: "Client not found" } };
