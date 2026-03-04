@@ -11,6 +11,7 @@ import { getProgressByExercise } from "@/lib/progress";
 import { createSession } from "@/app/actions/sessions";
 import { listExerciseCatalog } from "@/app/actions/exercises";
 import { requireUser, assertClientAccess } from "@/lib/authz";
+import { LogoutButton } from "@/components/LogoutButton";
 import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
@@ -26,8 +27,9 @@ export default async function ClientDetailPage({
   searchParams: Promise<{ take?: string }>;
 }) {
   const { id } = await params;
-  await requireUser();
+  const user = await requireUser();
   await assertClientAccess(id);
+  const isClient = user.role === "CLIENT";
 
   const { take: takeParam } = await searchParams;
   const take = Math.min(
@@ -59,14 +61,16 @@ export default async function ClientDetailPage({
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
-          >
-            ← Clients
-          </Link>
-          <h1 className="text-2xl font-bold text-[var(--text)]">{client.name}</h1>
+        <div className={`flex items-center gap-4 ${isClient ? "flex-1 min-w-0" : ""}`}>
+          {!isClient && (
+            <Link
+              href="/"
+              className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0"
+            >
+              ← Clients
+            </Link>
+          )}
+          <h1 className="text-2xl font-bold text-[var(--text)] shrink-0">{client.name}</h1>
           <div className="flex items-center gap-3">
             <a
               href="#progress-charts"
@@ -88,6 +92,11 @@ export default async function ClientDetailPage({
             </Link>
           </div>
         </div>
+        {isClient && (
+          <div className="shrink-0 ml-4">
+            <LogoutButton variant="primary" />
+          </div>
+        )}
       </div>
       <p className="mb-6 text-sm text-muted">
         {client.age}y · {formatHeight(client.heightCm)} ·{" "}

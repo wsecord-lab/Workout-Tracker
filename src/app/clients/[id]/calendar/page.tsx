@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getClientSessionsInMonth } from "@/lib/db/workouts";
 import { requireUser, assertClientAccess } from "@/lib/authz";
+import { LogoutButton } from "@/components/LogoutButton";
 import { CalendarClient } from "../CalendarClient";
 
 export default async function ClientCalendarPage({
@@ -13,8 +14,9 @@ export default async function ClientCalendarPage({
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
   const { id } = await params;
-  await requireUser();
+  const user = await requireUser();
   await assertClientAccess(id);
+  const isClient = user.role === "CLIENT";
 
   const { year: yearParam, month: monthParam } = await searchParams;
 
@@ -59,7 +61,7 @@ export default async function ClientCalendarPage({
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center gap-4 ${isClient ? "flex-1 min-w-0" : ""}`}>
           <Link
             href={`/clients/${id}`}
             className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
@@ -68,6 +70,11 @@ export default async function ClientCalendarPage({
           </Link>
           <h1 className="text-2xl font-bold text-[var(--text)]">Calendar</h1>
         </div>
+        {isClient && (
+          <div className="shrink-0 ml-4">
+            <LogoutButton variant="primary" />
+          </div>
+        )}
       </div>
       <CalendarClient
         clientId={id}

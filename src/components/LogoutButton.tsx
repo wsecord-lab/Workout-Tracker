@@ -2,14 +2,15 @@
 
 import { signOut } from "next-auth/react";
 
-export function LogoutButton() {
+export function LogoutButton({ variant = "secondary" }: { variant?: "primary" | "secondary" }) {
+  const buttonClass = variant === "primary" ? "btn-primary text-sm" : "btn-secondary text-sm";
   return (
     <button
       type="button"
       onClick={() => signOut({ callbackUrl: "/login" })}
-      className="btn-secondary text-sm"
+      className={buttonClass}
     >
-      Sign out
+      {variant === "primary" ? "Logout" : "Sign out"}
     </button>
   );
 }
