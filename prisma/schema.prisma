@@ -125,6 +125,7 @@ model AuditLog {
 // —— Workouts (existing app) ———
 model WorkoutSession {
   id         String    @id @default(cuid())
+  name       String?
   date       DateTime  @default(now())
   clientId   String
   client     Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -133,20 +134,32 @@ model WorkoutSession {
   @@index([clientId, date])
 }
 
+model ExerciseCatalog {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  exercises Exercise[]
+}
+
 model Exercise {
-  id        String   @id @default(cuid())
-  name      String
-  sessionId String
-  session   WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sets      Set[]
+  id                  String           @id @default(cuid())
+  name                String
+  sessionId           String
+  session             WorkoutSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  catalogExerciseId   String?
+  catalogExercise     ExerciseCatalog? @relation(fields: [catalogExerciseId], references: [id], onDelete: SetNull)
+  sets                Set[]
 
   @@index([sessionId])
+  @@index([catalogExerciseId])
 }
 
 model Set {
   id         String   @id @default(cuid())
   weightKg   Float
   reps       Int
+  rpe        Float?
+  notes      String?
   exerciseId String
   exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
