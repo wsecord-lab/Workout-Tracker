@@ -5,6 +5,7 @@ import { updateClient } from "@/app/actions/clients";
 import { deleteClient } from "@/app/actions/clients";
 import { ClientForm } from "@/app/clients/ClientForm";
 import { DeleteClientButton } from "@/app/clients/DeleteClientButton";
+import { LinkClientAccount } from "@/app/clients/[id]/LinkClientAccount";
 import { requireUser, assertClientAccess } from "@/lib/authz";
 
 export default async function EditClientPage({
@@ -13,7 +14,7 @@ export default async function EditClientPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireUser();
+  const user = await requireUser();
   await assertClientAccess(id);
   const client = await prisma.client.findUnique({ where: { id } });
   if (!client) notFound();
@@ -40,6 +41,9 @@ export default async function EditClientPage({
         clientId={id}
         successRedirect={`/clients/${id}`}
       />
+      {user.role === "TRAINER" && (
+        <LinkClientAccount clientId={id} />
+      )}
       <div className="mt-6">
         <DeleteClientButton clientId={id} clientName={client.name} />
       </div>

@@ -7,7 +7,16 @@ import { requireUser, getClientIdForCurrentUser } from "@/lib/authz";
 export default async function HomePage() {
   const user = await requireUser();
   const clientId = await getClientIdForCurrentUser();
-  if (user.role === "CLIENT" && clientId) redirect(`/clients/${clientId}`);
+  if (user.role === "CLIENT") {
+    if (clientId) redirect(`/clients/${clientId}`);
+    return (
+      <div>
+        <p className="text-muted">
+          Your account is not linked to a client profile yet. Contact your trainer to get linked.
+        </p>
+      </div>
+    );
+  }
 
   const clients = await prisma.client.findMany({
     orderBy: { name: "asc" },
