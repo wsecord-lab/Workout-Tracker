@@ -47,3 +47,13 @@ export async function createExerciseFromName(sessionId: string, name: string): P
   const catalog = await createCatalogExercise(name);
   await createExercise(sessionId, catalog.name, catalog.id);
 }
+
+export async function deleteExercise(exerciseId: string): Promise<void> {
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exerciseId },
+    include: { session: true },
+  });
+  if (!exercise) return;
+  await prisma.exercise.delete({ where: { id: exerciseId } });
+  revalidatePath(`/clients/${exercise.session.clientId}`);
+}
