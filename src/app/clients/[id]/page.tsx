@@ -9,6 +9,7 @@ import {
 import { formatHeight, formatWeight } from "@/lib/units";
 import { getProgressByExercise } from "@/lib/progress";
 import { createSession } from "@/app/actions/sessions";
+import { listExerciseCatalog } from "@/app/actions/exercises";
 import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
@@ -42,10 +43,11 @@ export default async function ClientDetailPage({
   });
   if (!client) notFound();
 
-  const [{ sessions, hasMore }, chartSessions, weightRecords] = await Promise.all([
+  const [{ sessions, hasMore }, chartSessions, weightRecords, catalog] = await Promise.all([
     getClientSessionsPaginated({ clientId: id, take }),
     getClientSessionsForCharts(id),
     getClientWeightRecordsForChart(id),
+    listExerciseCatalog(),
   ]);
 
   const progress = getProgressByExercise(chartSessions);
@@ -69,6 +71,12 @@ export default async function ClientDetailPage({
               View charts
             </a>
             <Link
+              href={`/clients/${id}/calendar`}
+              className="btn-primary text-sm"
+            >
+              Calendar
+            </Link>
+            <Link
               href={`/clients/${id}/edit`}
               className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
             >
@@ -91,7 +99,7 @@ export default async function ClientDetailPage({
         ) : (
           <>
             {sessions.map((session) => (
-              <SessionBlock key={session.id} session={session} />
+              <SessionBlock key={session.id} session={session} catalog={catalog} />
             ))}
             <LoadMoreSessions
               clientId={id}

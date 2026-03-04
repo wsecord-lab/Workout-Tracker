@@ -57,3 +57,24 @@ export async function getClientWeightRecordsForChart(clientId: string) {
     orderBy: { recordedAt: "asc" },
   });
 }
+
+/** Sessions for a client within a calendar month (start inclusive, end exclusive). */
+export async function getClientSessionsInMonth(params: {
+  clientId: string;
+  year: number;
+  month: number; // 1–12
+}) {
+  const monthStart = new Date(params.year, params.month - 1, 1);
+  const monthEnd = new Date(params.year, params.month, 1);
+
+  return prisma.workoutSession.findMany({
+    where: {
+      clientId: params.clientId,
+      date: { gte: monthStart, lt: monthEnd },
+    },
+    orderBy: { date: "asc" },
+    include: {
+      exercises: { include: { sets: true } },
+    },
+  });
+}
