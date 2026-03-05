@@ -12,9 +12,11 @@ type CatalogItem = { id: string; name: string };
 export function AddExerciseForm({
   sessionId,
   catalog,
+  onExerciseAdded,
 }: {
   sessionId: string;
   catalog: CatalogItem[];
+  onExerciseAdded?: (newExerciseId: string) => void;
 }) {
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [newName, setNewName] = useState("");
@@ -26,8 +28,11 @@ export function AddExerciseForm({
     const id = selectedCatalogId.trim();
     if (!id) return;
     startTransition(async () => {
-      await createExercise(sessionId, "", id);
+      const newExerciseId = await createExercise(sessionId, "", id);
       setSelectedCatalogId("");
+      if (newExerciseId) {
+        onExerciseAdded?.(newExerciseId);
+      }
       router.refresh();
     });
   }
@@ -37,8 +42,11 @@ export function AddExerciseForm({
     const n = newName.trim();
     if (!n) return;
     startTransition(async () => {
-      await createExerciseFromName(sessionId, n);
+      const newExerciseId = await createExerciseFromName(sessionId, n);
       setNewName("");
+      if (newExerciseId) {
+        onExerciseAdded?.(newExerciseId);
+      }
       router.refresh();
     });
   }

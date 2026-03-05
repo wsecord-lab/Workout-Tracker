@@ -27,27 +27,31 @@ export async function createExercise(
   sessionId: string,
   name: string,
   catalogExerciseId?: string | null
-): Promise<void> {
+): Promise<string | null> {
   const session = await prisma.workoutSession.findUnique({ where: { id: sessionId }, include: { client: true } });
-  if (!session) return;
+  if (!session) return null;
   await assertClientAccess(session.clientId);
   if (catalogExerciseId) {
     const catalog = await prisma.exerciseCatalog.findUnique({ where: { id: catalogExerciseId }, select: { name: true } });
-    if (!catalog) return;
-    await prisma.exercise.create({
+    if (!catalog) return null;
+    const exercise = await prisma.exercise.create({
       data: { sessionId, name: catalog.name, catalogExerciseId },
+      select: { id: true },
     });
-  } else {
-    await prisma.exercise.create({
-      data: { sessionId, name: name.trim() },
-    });
+    revalidatePath(`/clients/${session.clientId}`);
+    return exercise.id;
   }
+  const exercise = await prisma.exercise.create({
+    data: { sessionId, name: name.trim() },
+    select: { id: true },
+  });
   revalidatePath(`/clients/${session.clientId}`);
+  return exercise.id;
 }
 
-export async function createExerciseFromName(sessionId: string, name: string): Promise<void> {
+export async function createExerciseFromName(sessionId: string, name: string): Promise<string | null> {
   const catalog = await createCatalogExercise(name);
-  await createExercise(sessionId, catalog.name, catalog.id);
+  return createExercise(sessionId, catalog.name, catalog.id);
 }
 
 export async function deleteExercise(exerciseId: string): Promise<void> {

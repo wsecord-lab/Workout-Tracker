@@ -1,27 +1,103 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import type { Exercise, Set } from "@prisma/client";
+import { formatWeight } from "@/lib/units";
 import { AddSetForm } from "./AddSetForm";
 import { DeleteExerciseButton } from "./DeleteExerciseButton";
 import { SetRow } from "./SetRow";
 
 type ExerciseWithSets = Exercise & { sets: Set[] };
 
-export function ExerciseRow({ exercise }: { exercise: ExerciseWithSets }) {
+function setsSummary(sets: Set[]): string {
+  if (sets.length === 0) return "No sets";
+  return sets
+    .map((s) => `${formatWeight(s.weightKg)} × ${s.reps}`)
+    .join(", ");
+}
+
+export function ExerciseRow({
+  exercise,
+  isOpen,
+  onToggle,
+}: {
+  exercise: ExerciseWithSets;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState(0);
+
+  useEffect(() => {
+    if (isOpen && contentRef.current) {
+      const el = contentRef.current;
+      const measure = () => setMaxHeight(el.scrollHeight);
+      measure();
+      requestAnimationFrame(measure);
+    } else {
+      setMaxHeight(0);
+    }
+  }, [isOpen, exercise.sets.length]);
+
+  useEffect(() => {
+    if (!contentRef.current || !isOpen) return;
+    const el = contentRef.current;
+    const observer = new ResizeObserver(() => {
+      setMaxHeight(el.scrollHeight);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isOpen]);
+
   return (
     <div className="rounded border border-border bg-background p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h4 className="font-medium text-[var(--text)]">{exercise.name}</h4>
+      <div className="sticky top-0 z-10 flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-controls={`exercise-${exercise.id}`}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 py-3 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3"
+        >
+          <span
+            className={`inline-block shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
+            aria-hidden
+          >
+            ▶
+          </span>
+          <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+          {!isOpen && (
+            <span className="shrink-0 text-sm text-muted truncate">
+              {setsSummary(exercise.sets)}
+            </span>
+          )}
+        </button>
         <DeleteExerciseButton
           exerciseId={exercise.id}
           exerciseName={exercise.name}
           hasSets={exercise.sets.length > 0}
         />
       </div>
-      <ul className="mb-2 space-y-1">
-        {exercise.sets.map((s) => (
-          <SetRow key={s.id} set={s} />
-        ))}
-      </ul>
-      <AddSetForm exerciseId={exercise.id} />
+      <div
+        id={`exercise-${exercise.id}`}
+        style={{ maxHeight: maxHeight === 0 ? 0 : maxHeight }}
+        className="overflow-hidden transition-[max-height,opacity] duration-200 ease-in-out md:duration-300"
+      >
+        <div
+          ref={contentRef}
+          className={`transition-opacity duration-200 ease-in-out md:duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`}
+        >
+          <ul className="mb-2 mt-2 space-y-1">
+            {exercise.sets.map((s) => (
+              <SetRow key={s.id} set={s} />
+            ))}
+          </ul>
+          <AddSetForm
+            exerciseId={exercise.id}
+            lastSet={exercise.sets.length > 0 ? exercise.sets[exercise.sets.length - 1] : null}
+          />
+        </div>
+      </div>
     </div>
   );
 }

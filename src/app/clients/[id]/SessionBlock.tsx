@@ -32,7 +32,30 @@ export function SessionBlock({
   const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(session.name ?? "");
+  const [openExerciseIds, setOpenExerciseIds] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
+
+  function toggleExercise(id: string) {
+    setOpenExerciseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function expandAll() {
+    setOpenExerciseIds(new Set(session.exercises.map((e) => e.id)));
+  }
+
+  function collapseAll() {
+    setOpenExerciseIds(new Set());
+  }
+
+  function handleExerciseAdded(newExerciseId: string) {
+    setOpenExerciseIds(new Set([newExerciseId]));
+  }
+
   const dateStr = formatSessionDate(session.date);
   const exerciseCount = session.exercises.length;
 
@@ -127,10 +150,37 @@ export function SessionBlock({
               </button>
             )}
           </div>
+          {session.exercises.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={expandAll}
+                className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+              >
+                Collapse all
+              </button>
+            </div>
+          )}
           {session.exercises.map((exercise) => (
-            <ExerciseRow key={exercise.id} exercise={exercise} />
+            <ExerciseRow
+              key={exercise.id}
+              exercise={exercise}
+              isOpen={openExerciseIds.has(exercise.id)}
+              onToggle={() => toggleExercise(exercise.id)}
+            />
           ))}
-          <AddExerciseForm sessionId={session.id} catalog={catalog} />
+          <AddExerciseForm
+            sessionId={session.id}
+            catalog={catalog}
+            onExerciseAdded={handleExerciseAdded}
+          />
           <div className="pt-2 border-t border-[var(--border)]">
             <DeleteSessionButton
               sessionId={session.id}

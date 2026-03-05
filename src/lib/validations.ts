@@ -46,6 +46,105 @@ export function validateSetDetails(data: {
   return { ok: true, data: { rpe: rpeResult ?? null, notes } };
 }
 
+export type SetUpdateFormErrors = { weightLb?: string; reps?: string; rpe?: string; notes?: string };
+
+/** Validate full set update payload: weight, reps, rpe (optional), notes (optional). Same storage/units as create. */
+export function validateSetUpdate(data: {
+  weightLb: unknown;
+  reps: unknown;
+  rpe?: unknown;
+  notes?: unknown;
+}): { ok: true; data: { weightKg: number; reps: number; rpe: number | null; notes: string | null } } | { ok: false; errors: SetUpdateFormErrors } {
+  const errors: SetUpdateFormErrors = {};
+  const weightLb = typeof data.weightLb === "string" ? parseFloat(data.weightLb) : typeof data.weightLb === "number" ? data.weightLb : NaN;
+  if (Number.isNaN(weightLb) || weightLb < 0) errors.weightLb = "Weight must be ≥ 0 lb";
+
+  const reps = typeof data.reps === "string" ? parseInt(data.reps, 10) : typeof data.reps === "number" ? data.reps : NaN;
+  if (Number.isNaN(reps) || reps < 0) errors.reps = "Reps must be ≥ 0";
+
+  const rpeResult = parseRpe(data.rpe);
+  if (rpeResult === undefined) errors.rpe = "RPE must be 1–10 in 0.5 steps or empty";
+  const notes = parseNotes(data.notes);
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const weightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
+  return { ok: true, data: { weightKg, reps, rpe: rpeResult ?? null, notes } };
+}
+
+export type SetBulkEntry = { weight: number | null; reps: number | null; rpe?: number | null; notes?: string | null };
+
+export type SetBulkFormErrors = Record<string, string>;
+
+/** Validate a single bulk set entry; returns errors keyed by e.g. "sets.0.weight", "sets.0.reps". */
+function validateSetBulkEntry(
+  entry: unknown,
+  index: number
+): { ok: true; data: { weightKg: number; reps: number; rpe: number | null; notes: string | null } } | { ok: false; errors: SetBulkFormErrors } {
+  const prefix = `sets.${index}.`;
+  const errors: SetBulkFormErrors = {};
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    errors[`${prefix}_`] = "Invalid set entry";
+    return { ok: false, errors };
+  }
+  const o = entry as Record<string, unknown>;
+  const weightInput = o.weight;
+  const weightLb =
+    weightInput === null || weightInput === undefined || weightInput === ""
+      ? 0
+      : typeof weightInput === "number"
+        ? weightInput
+        : typeof weightInput === "string"
+          ? parseFloat(weightInput)
+          : NaN;
+  if (Number.isNaN(weightLb) || weightLb < 0) errors[`${prefix}weight`] = "Weight must be ≥ 0 lb";
+
+  const repsInput = o.reps;
+  const reps =
+    repsInput === null || repsInput === undefined
+      ? NaN
+      : typeof repsInput === "number"
+        ? repsInput
+        : typeof repsInput === "string"
+          ? parseInt(String(repsInput), 10)
+          : NaN;
+  if (Number.isNaN(reps) || reps < 0) errors[`${prefix}reps`] = "Reps must be ≥ 0";
+
+  const rpeResult = parseRpe(o.rpe);
+  if (rpeResult === undefined) errors[`${prefix}rpe`] = "RPE must be 1–10 in 0.5 steps or empty";
+  const notes = parseNotes(o.notes);
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const weightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
+  return { ok: true, data: { weightKg, reps, rpe: rpeResult ?? null, notes } };
+}
+
+/** Parse and validate bulk sets from JSON string. Reject if any entry invalid. */
+export function validateSetsBulk(setsJson: unknown): { ok: true; data: { weightKg: number; reps: number; rpe: number | null; notes: string | null }[] } | { ok: false; errors: SetBulkFormErrors } {
+  if (typeof setsJson !== "string" || setsJson.trim() === "") {
+    return { ok: false, errors: { sets: "setsJson is required" } };
+  }
+  let arr: unknown[];
+  try {
+    const parsed = JSON.parse(setsJson);
+    if (!Array.isArray(parsed)) return { ok: false, errors: { sets: "setsJson must be a JSON array" } };
+    arr = parsed;
+  } catch {
+    return { ok: false, errors: { sets: "Invalid JSON" } };
+  }
+  const data: { weightKg: number; reps: number; rpe: number | null; notes: string | null }[] = [];
+  const allErrors: SetBulkFormErrors = {};
+  for (let i = 0; i < arr.length; i++) {
+    const result = validateSetBulkEntry(arr[i], i);
+    if (!result.ok) {
+      Object.assign(allErrors, result.errors);
+    } else {
+      data.push(result.data);
+    }
+  }
+  if (Object.keys(allErrors).length > 0) return { ok: false, errors: allErrors };
+  return { ok: true, data };
+}
+
 const DEFAULT_AGE = 18;
 const DEFAULT_HEIGHT_IN = 66; // 5 ft 6 in
 const DEFAULT_BODY_WEIGHT_LB = 150;
