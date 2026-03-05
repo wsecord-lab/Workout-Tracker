@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Exercise, Set } from "@prisma/client";
 import { formatWeight } from "@/lib/units";
+import type { GroupPresentation } from "@/lib/group-presentation";
 import { usePreviousSessionBest } from "@/hooks/usePreviousSessionBest";
 import { AddSetForm } from "./AddSetForm";
 import { DeleteExerciseButton } from "./DeleteExerciseButton";
@@ -32,6 +34,10 @@ export function ExerciseRow({
   clientId,
   sessionDate,
   showPreviousBest = false,
+  groupPresentation,
+  uniqueGroups,
+  sessionId,
+  onGroupChange,
 }: {
   exercise: ExerciseWithSets;
   isOpen: boolean;
@@ -39,7 +45,79 @@ export function ExerciseRow({
   clientId?: string;
   sessionDate?: Date;
   showPreviousBest?: boolean;
+  groupPresentation?: GroupPresentation | undefined;
+  uniqueGroups?: { groupId: string; label: string }[];
+  sessionId?: string;
+  onGroupChange?: () => void;
 }) {
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const groupTriggerRef = useRef<HTMLDivElement>(null);
+  const groupPanelRef = useRef<HTMLDivElement>(null);
+  const [groupMenuPosition, setGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!groupMenuOpen || !groupTriggerRef.current) return;
+    const rect = groupTriggerRef.current.getBoundingClientRect();
+    const padding = 8;
+    const maxW = Math.min(280, window.innerWidth * 0.9);
+    let left = rect.left;
+    if (left + maxW > window.innerWidth - padding) left = window.innerWidth - maxW - padding;
+    if (left < padding) left = padding;
+    setGroupMenuPosition({ top: rect.bottom + 4, left });
+  }, [groupMenuOpen]);
+
+  useEffect(() => {
+    if (!groupMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        groupTriggerRef.current?.contains(target) ||
+        groupPanelRef.current?.contains(target)
+      )
+        return;
+      setGroupMenuOpen(false);
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [groupMenuOpen]);
+
+  async function setGroup(groupId: string | null) {
+    if (!sessionId || !onGroupChange) return;
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/exercises/${exercise.id}/group`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId }),
+      });
+      if (res.ok) {
+        onGroupChange();
+        setGroupMenuOpen(false);
+      } else {
+        setGroupMenuOpen(false);
+      }
+    } catch {
+      setGroupMenuOpen(false);
+    }
+  }
+
+  async function createNewGroup() {
+    if (!sessionId || !onGroupChange) return;
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exerciseInstanceId: exercise.id }),
+      });
+      if (res.ok) {
+        onGroupChange();
+        setGroupMenuOpen(false);
+      } else {
+        setGroupMenuOpen(false);
+      }
+    } catch {
+      setGroupMenuOpen(false);
+    }
+  }
   const { data: previousBest, loading: previousBestLoading } = usePreviousSessionBest({
     clientId: clientId ?? "",
     sessionDate: sessionDate ?? new Date(),
@@ -71,9 +149,13 @@ export function ExerciseRow({
     return () => observer.disconnect();
   }, [isOpen]);
 
+  const showGroupControls = !!sessionId && !!onGroupChange;
+
   return (
-    <div className="rounded border border-border bg-background p-3">
-      <div className="sticky top-0 z-[5] flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded">
+    <div
+      className={`relative overflow-visible rounded border border-border p-3 ${groupPresentation ? `border-l-4 ${groupPresentation.borderClass} ${groupPresentation.cardTintClass}` : "bg-background"}`}
+    >
+      <div className="sticky top-0 z-[5] flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded overflow-visible">
         <button
           type="button"
           onClick={onToggle}
@@ -88,7 +170,30 @@ export function ExerciseRow({
             ▶
           </span>
           <div className="min-w-0 flex-1">
-            <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+              {groupPresentation && (
+                <span
+                  className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium shrink-0 ${groupPresentation.chipClass}`}
+                >
+                  {groupPresentation.label}
+                  {showGroupControls && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setGroup(null);
+                      }}
+                      className="ml-1 rounded hover:opacity-80 focus:ring-1 focus:ring-offset-0"
+                      aria-label="Remove from group"
+                      title="Remove from group"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
             {showPreviousBest && (
               <p className="mt-0.5 text-xs text-muted break-words">
                 {previousBestLoading && "Fetching previous session best…"}
@@ -107,11 +212,92 @@ export function ExerciseRow({
             </span>
           )}
         </button>
-        <DeleteExerciseButton
-          exerciseId={exercise.id}
-          exerciseName={exercise.name}
-          setsCount={exercise.sets.length}
-        />
+        <div className="flex items-center gap-1 shrink-0" ref={groupTriggerRef}>
+          {showGroupControls && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setGroupMenuOpen((o) => !o);
+                }}
+                className="rounded px-2 py-1 text-xs text-muted hover:bg-muted/50 outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                aria-expanded={groupMenuOpen}
+                aria-haspopup="true"
+              >
+                Group
+              </button>
+              {groupMenuOpen &&
+                groupMenuPosition &&
+                typeof document !== "undefined" &&
+                createPortal(
+                  <div
+                    ref={groupPanelRef}
+                    className="fixed z-[100] w-max min-w-[180px] max-w-[min(280px,90vw)] rounded border border-border bg-background py-1 shadow-lg whitespace-nowrap"
+                    style={{ top: groupMenuPosition.top, left: groupMenuPosition.left }}
+                  >
+                    {!exercise.groupId ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => createNewGroup()}
+                          className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                        >
+                          Create new group
+                        </button>
+                        {uniqueGroups?.length ? (
+                          <>
+                            <div className="my-1 border-t border-border" />
+                            {uniqueGroups.map((g) => (
+                              <button
+                                key={g.groupId}
+                                type="button"
+                                onClick={() => setGroup(g.groupId)}
+                                className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                              >
+                                Add to {g.label}
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        {uniqueGroups?.filter((g) => g.groupId !== exercise.groupId).length
+                          ? uniqueGroups
+                              .filter((g) => g.groupId !== exercise.groupId)
+                              .map((g) => (
+                                <button
+                                  key={g.groupId}
+                                  type="button"
+                                  onClick={() => setGroup(g.groupId)}
+                                  className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                                >
+                                  Move to {g.label}
+                                </button>
+                              ))
+                          : null}
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          type="button"
+                          onClick={() => setGroup(null)}
+                          className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50 text-error"
+                        >
+                          Remove from group
+                        </button>
+                      </>
+                    )}
+                  </div>,
+                  document.body
+                )}
+            </>
+          )}
+          <DeleteExerciseButton
+            exerciseId={exercise.id}
+            exerciseName={exercise.name}
+            setsCount={exercise.sets.length}
+          />
+        </div>
       </div>
       <div
         id={`exercise-${exercise.id}`}

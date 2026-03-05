@@ -153,6 +153,7 @@ model AuditLog {
 model WorkoutSession {
   id         String    @id @default(cuid())
   name       String?
+  notes      String?   @db.Text
   date       DateTime  @default(now())
   clientId   String
   client     Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -191,6 +192,7 @@ model Exercise {
   catalogExerciseId   String?
   catalogExercise     ExerciseCatalog? @relation(fields: [catalogExerciseId], references: [id], onDelete: SetNull)
   orderIndex          Int              @default(0)
+  groupId             String?
   sets                Set[]
   deletedAt           DateTime?
 

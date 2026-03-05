@@ -22,6 +22,7 @@ export async function getClientSessionsPaginated(params: {
     include: {
       exercises: {
         where: { deletedAt: null },
+        orderBy: { orderIndex: "asc" },
         include: { sets: true },
       },
     },
@@ -45,6 +46,7 @@ export async function getClientSessionsForCharts(clientId: string) {
     include: {
       exercises: {
         where: { deletedAt: null },
+        orderBy: { orderIndex: "asc" },
         include: { sets: true },
       },
     },
@@ -82,6 +84,7 @@ export async function getClientSessionsInMonth(params: {
     include: {
       exercises: {
         where: { deletedAt: null },
+        orderBy: { orderIndex: "asc" },
         include: { sets: true },
       },
     },

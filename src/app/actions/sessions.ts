@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
-import { sanitizeName, SESSION_NAME_MAX_LENGTH } from "@/lib/sanitize";
+import { sanitizeName, sanitizeNotes, SESSION_NAME_MAX_LENGTH, NOTES_MAX_LENGTH } from "@/lib/sanitize";
 
 /** Session name is sanitized (HTML stripped, max length enforced) before storage. */
 export async function createSession(clientId: string, name?: string | null): Promise<void> {
@@ -119,6 +119,21 @@ export async function updateSessionName(sessionId: string, clientId: string, nam
     data: { name: sanitized },
   });
   await invalidateClientMetricsCache(clientId);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+/** Session notes: sanitized (HTML stripped, max length) before storage. */
+export async function updateSessionNotes(
+  sessionId: string,
+  clientId: string,
+  notes: string | null
+): Promise<void> {
+  await assertClientAccess(clientId);
+  const sanitized = sanitizeNotes(notes, NOTES_MAX_LENGTH);
+  await prisma.workoutSession.update({
+    where: { id: sessionId },
+    data: { notes: sanitized },
+  });
   revalidatePath(`/clients/${clientId}`);
 }
 

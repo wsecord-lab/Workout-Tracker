@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { WorkoutSession, Exercise, Set as PrismaSet } from "@prisma/client";
-import { updateSessionName, applyTemplateToSession } from "@/app/actions/sessions";
+import { updateSessionName, updateSessionNotes, applyTemplateToSession } from "@/app/actions/sessions";
 import { listTemplates } from "@/app/actions/templates";
+import { computeGroupPresentation } from "@/lib/group-presentation";
 import { AddExerciseForm } from "./AddExerciseForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 import { ExerciseRow } from "./ExerciseRow";
@@ -40,6 +41,8 @@ export function SessionBlock({
   const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(session.name ?? "");
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [editNotesValue, setEditNotesValue] = useState(session.notes ?? "");
   const [openExerciseIds, setOpenExerciseIds] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -83,6 +86,13 @@ export function SessionBlock({
 
   const dateStr = formatSessionDate(session.date);
   const exerciseCount = session.exercises.length;
+  const groupPresentation = useMemo(
+    () =>
+      computeGroupPresentation(
+        session.exercises.map((e) => ({ id: e.id, groupId: e.groupId, orderIndex: e.orderIndex }))
+      ),
+    [session.exercises]
+  );
 
   function handleSaveName() {
     const value = editNameValue.trim() || null;
@@ -93,6 +103,18 @@ export function SessionBlock({
     startTransition(async () => {
       await updateSessionName(session.id, session.clientId, value);
       setEditingName(false);
+    });
+  }
+
+  function handleSaveNotes() {
+    const value = editNotesValue.trim() || null;
+    if (value === (session.notes ?? null)) {
+      setEditingNotes(false);
+      return;
+    }
+    startTransition(async () => {
+      await updateSessionNotes(session.id, session.clientId, value);
+      setEditingNotes(false);
     });
   }
 
@@ -204,12 +226,15 @@ export function SessionBlock({
       document.body
     );
 
+  const notesPreview = session.notes?.trim();
+  const notesTruncated = notesPreview && notesPreview.length > 60 ? notesPreview.slice(0, 60) + "…" : notesPreview;
+
   return (
     <section className="card">
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center justify-between text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+        className="flex w-full items-center justify-between gap-2 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
       >
         <div className="min-w-0 flex-1">
           {session.name ? (
@@ -219,10 +244,20 @@ export function SessionBlock({
             {dateStr}
           </p>
         </div>
-        <span className="flex items-center gap-2 text-sm text-muted shrink-0 ml-2">
-          {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
+        <span className="flex items-center gap-2 text-sm shrink-0 ml-2 min-w-0">
+          {notesTruncated ? (
+            <span
+              className="truncate max-w-[180px] sm:max-w-[240px] text-muted"
+              title={notesPreview}
+            >
+              {notesTruncated}
+            </span>
+          ) : null}
+          <span className="text-muted shrink-0">
+            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
+          </span>
           <span
-            className={`inline-block transition-transform ${expanded ? "rotate-180" : ""}`}
+            className={`inline-block transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
             aria-hidden
           >
             ▼
@@ -283,6 +318,59 @@ export function SessionBlock({
               </button>
             )}
           </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-medium text-[var(--text)]">Notes</h4>
+            {editingNotes ? (
+              <>
+                <textarea
+                  value={editNotesValue}
+                  onChange={(e) => setEditNotesValue(e.target.value)}
+                  placeholder="Session notes (optional)"
+                  rows={3}
+                  className="input w-full py-1.5 text-sm resize-y min-h-[80px]"
+                  disabled={isPending}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveNotes}
+                    disabled={isPending}
+                    className="btn-primary text-sm py-1.5"
+                  >
+                    {isPending ? "…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditNotesValue(session.notes ?? "");
+                      setEditingNotes(false);
+                    }}
+                    disabled={isPending}
+                    className="btn-secondary text-sm py-1.5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-[var(--text)] whitespace-pre-wrap min-h-[1.5em]">
+                  {session.notes?.trim() ?? ""}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditNotesValue(session.notes ?? "");
+                    setEditingNotes(true);
+                  }}
+                  className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                >
+                  Edit notes
+                </button>
+              </>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {session.exercises.length > 0 && (
               <>
@@ -321,6 +409,10 @@ export function SessionBlock({
               clientId={session.clientId}
               sessionDate={session.date}
               showPreviousBest={showPreviousBest}
+              groupPresentation={groupPresentation.byExerciseId.get(exercise.id)}
+              uniqueGroups={groupPresentation.uniqueGroups}
+              sessionId={session.id}
+              onGroupChange={() => router.refresh()}
             />
           ))}
           <AddExerciseForm

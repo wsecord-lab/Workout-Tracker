@@ -73,6 +73,34 @@ export async function assertClientAccess(clientId: string): Promise<void> {
 }
 
 /**
+ * For API routes: check if the current user may edit the given session (trainer owns client, or client owns session).
+ * Does not redirect; returns allowed/denied so the route can return 403.
+ */
+export async function getSessionAccessForApi(sessionId: string): Promise<
+  | { allowed: true; clientId: string }
+  | { allowed: false }
+> {
+  const session = await auth();
+  if (!session?.user?.id) return { allowed: false };
+  const workoutSession = await prisma.workoutSession.findUnique({
+    where: { id: sessionId },
+    select: { clientId: true, client: { select: { trainerId: true, userId: true } } },
+  });
+  if (!workoutSession) return { allowed: false };
+  const role = (session.user as AuthUser).role;
+  if (role === "TRAINER") {
+    const trainerId = workoutSession.client?.trainerId ?? null;
+    if (trainerId != null && trainerId !== session.user.id) return { allowed: false };
+    return { allowed: true, clientId: workoutSession.clientId };
+  }
+  if (role === "CLIENT") {
+    if (workoutSession.client?.userId !== session.user.id) return { allowed: false };
+    return { allowed: true, clientId: workoutSession.clientId };
+  }
+  return { allowed: false };
+}
+
+/**
  * Get the client profile id for the current CLIENT user, or null if not a client or not linked.
  */
 export async function getClientIdForCurrentUser(): Promise<string | null> {
