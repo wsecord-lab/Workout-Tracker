@@ -8,6 +8,11 @@ const EXAMPLE_CLIENT_PASSWORD = "client123";
 const EXAMPLE_TRAINER_EMAIL = "davisvalenciam@gmail.com";
 const EXAMPLE_TRAINER_PASSWORD = "trainer123";
 
+/** Simple test credentials (same password for both). Use for quick testing. */
+const TEST_TRAINER_EMAIL = "trainer@test.com";
+const TEST_CLIENT_EMAIL = "client@test.com";
+const TEST_PASSWORD = "test123";
+
 const OLD_EXAMPLE_TRAINER_EMAIL = "trainer@example.com";
 
 async function main() {
@@ -207,12 +212,53 @@ async function main() {
     console.log(`Added ${added} sample sessions for Alex Demo.`);
   }
 
+  // —— Test accounts (simple credentials, same password for both) ——
+  const testPasswordHash = await hash(TEST_PASSWORD, 10);
+  await prisma.user.upsert({
+    where: { email: TEST_TRAINER_EMAIL },
+    create: {
+      email: TEST_TRAINER_EMAIL,
+      passwordHash: testPasswordHash,
+      name: "Test Trainer",
+      role: "TRAINER",
+    },
+    update: { passwordHash: testPasswordHash },
+  });
+  const testClientUser = await prisma.user.upsert({
+    where: { email: TEST_CLIENT_EMAIL },
+    create: {
+      email: TEST_CLIENT_EMAIL,
+      passwordHash: testPasswordHash,
+      name: "Test Client",
+      role: "CLIENT",
+    },
+    update: { passwordHash: testPasswordHash },
+  });
+  const testClientProfile = await prisma.client.findFirst({
+    where: { userId: testClientUser.id },
+  });
+  if (!testClientProfile) {
+    await prisma.client.create({
+      data: {
+        name: "Test Client",
+        age: 30,
+        heightCm: 170,
+        bodyWeightKg: 70,
+        userId: testClientUser.id,
+        weightRecords: { create: { weightKg: 70 } },
+      },
+    });
+  }
+
   console.log("\nExample trainer login:");
   console.log("  Email:", EXAMPLE_TRAINER_EMAIL);
   console.log("  Password:", EXAMPLE_TRAINER_PASSWORD);
   console.log("\nExample client login:");
   console.log("  Email:", EXAMPLE_CLIENT_EMAIL);
   console.log("  Password:", EXAMPLE_CLIENT_PASSWORD);
+  console.log("\n--- Test accounts (same password for both) ---");
+  console.log("Trainer view:  Email:", TEST_TRAINER_EMAIL, " Password:", TEST_PASSWORD);
+  console.log("Client view:   Email:", TEST_CLIENT_EMAIL, " Password:", TEST_PASSWORD);
   console.log("");
 
   // —— Original seed data (no auth users) — idempotent: only create if not present ——
