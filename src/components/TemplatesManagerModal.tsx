@@ -266,7 +266,11 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value);
-                  setErrors((prev) => ({ ...prev, name: undefined }));
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.name;
+                    return next;
+                  });
                 }}
                 placeholder="e.g. Push day"
                 maxLength={NAME_MAX}
