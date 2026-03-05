@@ -18,6 +18,7 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "db:backup": "npx tsx scripts/backup-db.ts",
+    "fix:migration": "npx tsx scripts/fixMigration.ts",
     "db:backup:install": "./scripts/install-nightly-backup.sh",
     "create:trainer": "tsx scripts/create-trainer.ts"
   },
