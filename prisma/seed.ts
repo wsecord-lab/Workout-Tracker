@@ -5,18 +5,23 @@ const prisma = new PrismaClient();
 
 const EXAMPLE_CLIENT_EMAIL = "client@example.com";
 const EXAMPLE_CLIENT_PASSWORD = "client123";
-const EXAMPLE_TRAINER_EMAIL = "trainer@example.com";
+const EXAMPLE_TRAINER_EMAIL = "davisvalenciam@gmail.com";
 const EXAMPLE_TRAINER_PASSWORD = "trainer123";
 
+const OLD_EXAMPLE_TRAINER_EMAIL = "trainer@example.com";
+
 async function main() {
-  // —— Example trainer login account (role TRAINER) ——
+  // Remove old example trainer if present (replaced by new trainer profile)
+  await prisma.user.deleteMany({ where: { email: OLD_EXAMPLE_TRAINER_EMAIL } });
+
+  // —— Trainer login account (role TRAINER) ——
   const trainerPasswordHash = await hash(EXAMPLE_TRAINER_PASSWORD, 10);
   await prisma.user.upsert({
     where: { email: EXAMPLE_TRAINER_EMAIL },
     create: {
       email: EXAMPLE_TRAINER_EMAIL,
       passwordHash: trainerPasswordHash,
-      name: "Demo Trainer",
+      name: "Davis Valencia",
       role: "TRAINER",
     },
     update: { passwordHash: trainerPasswordHash },
