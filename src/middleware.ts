@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PROTECTED_PREFIXES = ["/clients", "/dashboard"];
+const PROTECTED_PREFIXES = ["/clients", "/dashboard", "/charts", "/settings"];
 const SESSION_COOKIE_NAMES = ["authjs.session-token", "__Secure-authjs.session-token"];
 
 function isProtected(pathname: string): boolean {

@@ -46,24 +46,51 @@ export function validateSetDetails(data: {
   return { ok: true, data: { rpe: rpeResult ?? null, notes } };
 }
 
-export function validateClient(data: {
-  name: unknown;
-  age: unknown;
-  heightIn: unknown;
-  bodyWeightLb: unknown;
-}): { ok: true; data: { name: string; age: number; heightCm: number; bodyWeightKg: number } } | { ok: false; errors: ClientFormErrors } {
+const DEFAULT_AGE = 18;
+const DEFAULT_HEIGHT_IN = 66; // 5 ft 6 in
+const DEFAULT_BODY_WEIGHT_LB = 150;
+
+function parseNum(value: unknown): number {
+  if (value === undefined || value === null) return NaN;
+  if (typeof value === "number") return value;
+  const s = typeof value === "string" ? value.trim() : String(value).trim();
+  return s === "" ? NaN : parseFloat(s);
+}
+
+export function validateClient(
+  data: {
+    name: unknown;
+    age?: unknown;
+    heightIn?: unknown;
+    heightFeet?: unknown;
+    heightInInches?: unknown;
+    bodyWeightLb?: unknown;
+  },
+  options?: { optionalFields?: boolean }
+): { ok: true; data: { name: string; age: number; heightCm: number; bodyWeightKg: number } } | { ok: false; errors: ClientFormErrors } {
   const errors: ClientFormErrors = {};
+  const optional = options?.optionalFields === true;
+
   const name = typeof data.name === "string" ? data.name.trim() : "";
   if (!name) errors.name = "Name is required";
 
-  const age = typeof data.age === "string" ? parseInt(data.age, 10) : typeof data.age === "number" ? data.age : NaN;
-  if (Number.isNaN(age) || age < 0 || age > 120) errors.age = "Age must be 0–120";
+  const ageInput = typeof data.age === "string" ? (data.age.trim() === "" ? NaN : parseInt(data.age, 10)) : typeof data.age === "number" ? data.age : NaN;
+  const age = optional && Number.isNaN(ageInput) ? DEFAULT_AGE : ageInput;
+  if (!optional && Number.isNaN(age)) errors.age = "Age is required";
+  else if (!Number.isNaN(age) && (age < 0 || age > 120)) errors.age = "Age must be 0–120";
 
-  const heightIn = typeof data.heightIn === "string" ? parseFloat(data.heightIn) : typeof data.heightIn === "number" ? data.heightIn : NaN;
-  if (Number.isNaN(heightIn) || heightIn <= 0 || heightIn > 120) errors.heightIn = "Height must be 1–120 in";
+  const feet = parseNum(data.heightFeet);
+  const inchPart = parseNum(data.heightInInches);
+  const totalInFromFtIn = !Number.isNaN(feet) && !Number.isNaN(inchPart) ? feet * 12 + inchPart : NaN;
+  const heightInInput = !Number.isNaN(totalInFromFtIn) ? totalInFromFtIn : (typeof data.heightIn === "string" ? (data.heightIn.trim() === "" ? NaN : parseFloat(data.heightIn)) : typeof data.heightIn === "number" ? data.heightIn : NaN);
+  const heightIn = optional && Number.isNaN(heightInInput) ? DEFAULT_HEIGHT_IN : heightInInput;
+  if (!optional && Number.isNaN(heightIn)) errors.heightIn = "Height is required";
+  else if (!Number.isNaN(heightIn) && (heightIn <= 0 || heightIn > 120)) errors.heightIn = "Height must be 1–120 in";
 
-  const bodyWeightLb = typeof data.bodyWeightLb === "string" ? parseFloat(data.bodyWeightLb) : typeof data.bodyWeightLb === "number" ? data.bodyWeightLb : NaN;
-  if (Number.isNaN(bodyWeightLb) || bodyWeightLb <= 0 || bodyWeightLb > 2000) errors.bodyWeightLb = "Body weight must be 1–2000 lb";
+  const bodyWeightLbInput = typeof data.bodyWeightLb === "string" ? (data.bodyWeightLb.trim() === "" ? NaN : parseFloat(data.bodyWeightLb)) : typeof data.bodyWeightLb === "number" ? data.bodyWeightLb : NaN;
+  const bodyWeightLb = optional && Number.isNaN(bodyWeightLbInput) ? DEFAULT_BODY_WEIGHT_LB : bodyWeightLbInput;
+  if (!optional && Number.isNaN(bodyWeightLb)) errors.bodyWeightLb = "Body weight is required";
+  else if (!Number.isNaN(bodyWeightLb) && (bodyWeightLb <= 0 || bodyWeightLb > 2000)) errors.bodyWeightLb = "Body weight must be 1–2000 lb";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const heightCm = Math.round(toStorage(heightIn, "height") * 100) / 100;

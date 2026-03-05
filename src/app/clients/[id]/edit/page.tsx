@@ -50,6 +50,17 @@ export default async function EditClientPage({
         clientId={id}
         successRedirect={`/clients/${id}`}
       />
+      {isClient && (
+        <div className="mt-6 card max-w-md">
+          <h2 className="mb-2 text-lg font-semibold text-[var(--text)]">Security</h2>
+          <p className="mb-3 text-sm text-muted">
+            Update your password to keep your account secure.
+          </p>
+          <Link href="/manage-account/change-password" className="btn-primary inline-block text-sm">
+            Change password
+          </Link>
+        </div>
+      )}
       {user.role === "TRAINER" && (
         <LinkClientAccount clientId={id} />
       )}

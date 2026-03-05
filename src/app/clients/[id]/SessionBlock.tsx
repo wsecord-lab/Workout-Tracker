@@ -29,7 +29,7 @@ export function SessionBlock({
   session: SessionWithExercises;
   catalog: CatalogItem[];
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(session.name ?? "");
   const [isPending, startTransition] = useTransition();

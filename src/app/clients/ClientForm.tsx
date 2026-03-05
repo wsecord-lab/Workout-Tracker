@@ -15,10 +15,18 @@ type Props = {
   successRedirect?: string;
 };
 
+function heightCmToFeetAndInches(cm: number): { feet: number; inches: number } {
+  const totalIn = heightCmToInches(cm);
+  const feet = Math.floor(totalIn / 12);
+  const inches = Math.round((totalIn % 12) * 10) / 10;
+  return { feet, inches };
+}
+
 export function ClientForm({ action, initial, clientId, successRedirect }: Props) {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const defaultHeight = initial != null ? heightCmToFeetAndInches(initial.heightCm) : null;
 
   async function handleSubmit(formData: FormData) {
     setSubmitting(true);
@@ -51,7 +59,7 @@ export function ClientForm({ action, initial, clientId, successRedirect }: Props
       </div>
       <div>
         <label htmlFor="age" className="block text-sm font-medium text-[var(--text)]">
-          Age
+          Age <span className="text-muted font-normal">(optional)</span>
         </label>
         <input
           id="age"
@@ -64,32 +72,49 @@ export function ClientForm({ action, initial, clientId, successRedirect }: Props
         />
         {errors.age && <p className="mt-1 text-sm text-error">{errors.age}</p>}
       </div>
-      <div>
-        <label htmlFor="heightIn" className="block text-sm font-medium text-[var(--text)]">
-          Height (in)
-        </label>
-        <input
-          id="heightIn"
-          name="heightIn"
-          type="number"
-          step="0.1"
-          min="1"
-          max="120"
-          defaultValue={initial != null ? heightCmToInches(initial.heightCm) : undefined}
-          className="input mt-1"
-        />
-        {errors.heightIn && <p className="mt-1 text-sm text-error">{errors.heightIn}</p>}
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label htmlFor="heightFeet" className="block text-sm font-medium text-[var(--text)]">
+            Height <span className="text-muted font-normal">(optional)</span>
+          </label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              id="heightFeet"
+              name="heightFeet"
+              type="number"
+              min={0}
+              max={10}
+              placeholder="ft"
+              defaultValue={defaultHeight?.feet}
+              className="input w-20"
+            />
+            <span className="text-muted">ft</span>
+            <input
+              id="heightInInches"
+              name="heightInInches"
+              type="number"
+              min={0}
+              max={11.9}
+              step="0.1"
+              placeholder="in"
+              defaultValue={defaultHeight?.inches}
+              className="input w-20"
+            />
+            <span className="text-muted">in</span>
+          </div>
+        </div>
       </div>
+      {errors.heightIn && <p className="mt-1 text-sm text-error">{errors.heightIn}</p>}
       <div>
         <label htmlFor="bodyWeightLb" className="block text-sm font-medium text-[var(--text)]">
-          Body weight (lb)
+          Body weight (lb) <span className="text-muted font-normal">(optional)</span>
         </label>
         <input
           id="bodyWeightLb"
           name="bodyWeightLb"
           type="number"
           step="0.1"
-          min="0.1"
+          min={0}
           defaultValue={initial != null ? weightKgToLb(initial.bodyWeightKg) : undefined}
           className="input mt-1"
         />

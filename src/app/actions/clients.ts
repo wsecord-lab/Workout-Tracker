@@ -11,12 +11,16 @@ export type ClientActionResult =
 
 export async function createClient(formData: FormData): Promise<ClientActionResult> {
   await requireTrainer();
-  const result = validateClient({
-    name: formData.get("name"),
-    age: formData.get("age"),
-    heightIn: formData.get("heightIn"),
-    bodyWeightLb: formData.get("bodyWeightLb"),
-  });
+  const result = validateClient(
+    {
+      name: formData.get("name"),
+      age: formData.get("age"),
+      heightFeet: formData.get("heightFeet"),
+      heightInInches: formData.get("heightInInches"),
+      bodyWeightLb: formData.get("bodyWeightLb"),
+    },
+    { optionalFields: true }
+  );
   if (!result.ok) return { ok: false, errors: result.errors };
   const client = await prisma.client.create({
     data: {
@@ -37,7 +41,8 @@ export async function updateClient(
   const result = validateClient({
     name: formData.get("name"),
     age: formData.get("age"),
-    heightIn: formData.get("heightIn"),
+    heightFeet: formData.get("heightFeet"),
+    heightInInches: formData.get("heightInInches"),
     bodyWeightLb: formData.get("bodyWeightLb"),
   });
   if (!result.ok) return { ok: false, errors: result.errors };
