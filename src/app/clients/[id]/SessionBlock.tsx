@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { WorkoutSession, Exercise, Set } from "@prisma/client";
+import type { WorkoutSession, Exercise, Set as PrismaSet } from "@prisma/client";
 import { updateSessionName } from "@/app/actions/sessions";
 import { AddExerciseForm } from "./AddExerciseForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 import { ExerciseRow } from "./ExerciseRow";
 
-type ExerciseWithSets = Exercise & { sets: Set[] };
+type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
 type SessionWithExercises = WorkoutSession & { exercises: ExerciseWithSets[] };
 type CatalogItem = { id: string; name: string };
 
