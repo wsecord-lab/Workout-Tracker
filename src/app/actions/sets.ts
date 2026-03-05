@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess } from "@/lib/authz";
+import { invalidateClientMetricsCache } from "@/lib/metrics";
 import { validateSet, validateSetDetails, validateSetUpdate, validateSetsBulk } from "@/lib/validations";
 
 export type SetActionResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -37,6 +38,7 @@ export async function createSet(
       notes: result.data.notes,
     },
   });
+  await invalidateClientMetricsCache(exercise.session.clientId);
   revalidatePath(`/clients/${exercise.session.clientId}`);
   return { ok: true };
 }
@@ -65,6 +67,7 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
       notes: result.data.notes,
     },
   });
+  await invalidateClientMetricsCache(set.exercise.session.clientId);
   revalidatePath(`/clients/${set.exercise.session.clientId}`);
   return { ok: true };
 }
@@ -89,6 +92,7 @@ export async function updateSetDetails(
     where: { id: setId },
     data: { rpe: result.data.rpe, notes: result.data.notes },
   });
+  await invalidateClientMetricsCache(set.exercise.session.clientId);
   revalidatePath(`/clients/${set.exercise.session.clientId}`);
   return { ok: true };
 }
@@ -123,6 +127,7 @@ export async function createSetsBulk(formData: FormData): Promise<CreateSetsBulk
       })
     )
   );
+  await invalidateClientMetricsCache(exercise.session.clientId);
   revalidatePath(`/clients/${exercise.session.clientId}`);
   return { ok: true };
 }
@@ -135,5 +140,6 @@ export async function deleteSet(setId: string): Promise<void> {
   if (!set) return;
   await assertClientAccess(set.exercise.session.clientId);
   await prisma.set.delete({ where: { id: setId } });
+  await invalidateClientMetricsCache(set.exercise.session.clientId);
   revalidatePath(`/clients/${set.exercise.session.clientId}`);
 }

@@ -1,4 +1,5 @@
 import { toStorage } from "@/lib/units";
+import { sanitizeNotes as sanitizeNotesInput, sanitizeName, NOTES_MAX_LENGTH, CLIENT_NAME_MAX_LENGTH } from "@/lib/sanitize";
 
 export type ClientFormErrors = {
   name?: string;
@@ -24,11 +25,11 @@ export function parseRpe(value: unknown): number | null | undefined {
   return n;
 }
 
-/** Notes: optional string, trim, empty -> null. */
+/** Notes: optional string, trim, strip HTML, enforce max length, empty -> null. Sanitized for XSS-safe storage. */
 export function parseNotes(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   const s = typeof value === "string" ? value.trim() : String(value).trim();
-  return s === "" ? null : s;
+  return s === "" ? null : sanitizeNotesInput(s, NOTES_MAX_LENGTH);
 }
 
 export type SetDetailsFormErrors = { rpe?: string; notes?: string };
@@ -170,7 +171,8 @@ export function validateClient(
   const errors: ClientFormErrors = {};
   const optional = options?.optionalFields === true;
 
-  const name = typeof data.name === "string" ? data.name.trim() : "";
+  const nameRaw = typeof data.name === "string" ? data.name : "";
+  const name = sanitizeName(nameRaw, CLIENT_NAME_MAX_LENGTH); // XSS: strip HTML, enforce max length before storage
   if (!name) errors.name = "Name is required";
 
   const ageInput = typeof data.age === "string" ? (data.age.trim() === "" ? NaN : parseInt(data.age, 10)) : typeof data.age === "number" ? data.age : NaN;
@@ -217,4 +219,99 @@ export function validateSet(data: {
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   const weightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
   return { ok: true, data: { weightKg, reps, rpe: rpeResult ?? null, notes } };
+}
+
+// —— Workout templates ———
+const TEMPLATE_NAME_MIN = 2;
+const TEMPLATE_NAME_MAX = 60;
+const TEMPLATE_ITEMS_MIN = 1;
+const TEMPLATE_ITEMS_MAX = 50;
+
+/** Normalize exercise name: trim, collapse spaces, lowercase (for storage/comparison). */
+export function normalizeExerciseName(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/** Display name: trim, collapse spaces. */
+export function templateExerciseDisplayName(raw: string): string {
+  const s = raw.trim().replace(/\s+/g, " ");
+  return s;
+}
+
+export type TemplateFormErrors = { name?: string; items?: string; _?: string };
+
+export type TemplateItemInput = { exerciseName: string; orderIndex: number };
+
+export function validateTemplateCreate(data: {
+  name: unknown;
+  exerciseNames?: unknown;
+}): { ok: true; data: { name: string; items: { exerciseName: string; normalizedName: string; orderIndex: number }[] } } | { ok: false; errors: TemplateFormErrors } {
+  const errors: TemplateFormErrors = {};
+  const nameRaw = typeof data.name === "string" ? data.name : "";
+  const name = nameRaw.trim();
+  if (name.length < TEMPLATE_NAME_MIN || name.length > TEMPLATE_NAME_MAX) {
+    errors.name = `Name must be ${TEMPLATE_NAME_MIN}–${TEMPLATE_NAME_MAX} characters`;
+  }
+  const rawNames = data.exerciseNames;
+  let names: string[] = [];
+  if (Array.isArray(rawNames)) {
+    names = rawNames
+      .filter((n): n is string => typeof n === "string")
+      .map((n) => templateExerciseDisplayName(n))
+      .filter((n) => n.length > 0);
+  }
+  if (names.length < TEMPLATE_ITEMS_MIN || names.length > TEMPLATE_ITEMS_MAX) {
+    errors.items = `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`;
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const items = names.map((displayName, i) => ({
+    exerciseName: displayName,
+    normalizedName: normalizeExerciseName(displayName),
+    orderIndex: i,
+  }));
+  return { ok: true, data: { name: name.slice(0, TEMPLATE_NAME_MAX), items } };
+}
+
+export function validateTemplateUpdate(data: {
+  name?: unknown;
+  items?: unknown;
+}): { ok: true; data: { name?: string; items: { exerciseName: string; normalizedName: string; orderIndex: number }[] } } | { ok: false; errors: TemplateFormErrors } {
+  const errors: TemplateFormErrors = {};
+  let name: string | undefined;
+  if (data.name !== undefined) {
+    const nameRaw = typeof data.name === "string" ? data.name : "";
+    const trimmed = nameRaw.trim();
+    if (trimmed.length < TEMPLATE_NAME_MIN || trimmed.length > TEMPLATE_NAME_MAX) {
+      errors.name = `Name must be ${TEMPLATE_NAME_MIN}–${TEMPLATE_NAME_MAX} characters`;
+    } else {
+      name = trimmed;
+    }
+  }
+  let items: { exerciseName: string; normalizedName: string; orderIndex: number }[] = [];
+  if (data.items !== undefined) {
+    if (!Array.isArray(data.items) || data.items.length < TEMPLATE_ITEMS_MIN || data.items.length > TEMPLATE_ITEMS_MAX) {
+      errors.items = `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`;
+    } else {
+      const parsed = (data.items as unknown[])
+        .map((entry: unknown, i: number) => {
+          if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
+          const o = entry as Record<string, unknown>;
+          const exName = typeof o.exerciseName === "string" ? templateExerciseDisplayName(o.exerciseName) : "";
+          const orderIndex = typeof o.orderIndex === "number" ? o.orderIndex : i;
+          if (!exName) return null;
+          return { exerciseName: exName, normalizedName: normalizeExerciseName(exName), orderIndex };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      if (parsed.length < TEMPLATE_ITEMS_MIN) {
+        errors.items = `Template must have at least ${TEMPLATE_ITEMS_MIN} exercises (no empty names)`;
+      } else {
+        items = parsed.sort((a, b) => a.orderIndex - b.orderIndex).map((item, i) => ({ ...item, orderIndex: i }));
+      }
+    }
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  return { ok: true, data: { name, items } };
 }

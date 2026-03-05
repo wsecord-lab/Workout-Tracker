@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Exercise, Set } from "@prisma/client";
 import { formatWeight } from "@/lib/units";
+import { usePreviousSessionBest } from "@/hooks/usePreviousSessionBest";
 import { AddSetForm } from "./AddSetForm";
 import { DeleteExerciseButton } from "./DeleteExerciseButton";
 import { SetRow } from "./SetRow";
@@ -16,15 +17,36 @@ function setsSummary(sets: Set[]): string {
     .join(", ");
 }
 
+function formatPreviousBestDate(performedAt: string): string {
+  return new Date(performedAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function ExerciseRow({
   exercise,
   isOpen,
   onToggle,
+  clientId,
+  sessionDate,
+  showPreviousBest = false,
 }: {
   exercise: ExerciseWithSets;
   isOpen: boolean;
   onToggle: () => void;
+  clientId?: string;
+  sessionDate?: Date;
+  showPreviousBest?: boolean;
 }) {
+  const { data: previousBest, loading: previousBestLoading } = usePreviousSessionBest({
+    clientId: clientId ?? "",
+    sessionDate: sessionDate ?? new Date(),
+    catalogExerciseId: exercise.catalogExerciseId ?? undefined,
+    exerciseName: exercise.name,
+    enabled: showPreviousBest && !!clientId && !!sessionDate,
+  });
   const contentRef = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState(0);
 
@@ -51,7 +73,7 @@ export function ExerciseRow({
 
   return (
     <div className="rounded border border-border bg-background p-3">
-      <div className="sticky top-0 z-10 flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded">
+      <div className="sticky top-0 z-[5] flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded">
         <button
           type="button"
           onClick={onToggle}
@@ -65,7 +87,20 @@ export function ExerciseRow({
           >
             ▶
           </span>
-          <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+            {showPreviousBest && (
+              <p className="mt-0.5 text-xs text-muted break-words">
+                {previousBestLoading && "Fetching previous session best…"}
+                {!previousBestLoading && previousBest?.found === true && (
+                  <>Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} ({formatPreviousBestDate(previousBest.performedAt)})</>
+                )}
+                {!previousBestLoading && previousBest && !previousBest.found && (
+                  <>No previous history for this exercise</>
+                )}
+              </p>
+            )}
+          </div>
           {!isOpen && (
             <span className="shrink-0 text-sm text-muted truncate">
               {setsSummary(exercise.sets)}
@@ -75,7 +110,7 @@ export function ExerciseRow({
         <DeleteExerciseButton
           exerciseId={exercise.id}
           exerciseName={exercise.name}
-          hasSets={exercise.sets.length > 0}
+          setsCount={exercise.sets.length}
         />
       </div>
       <div

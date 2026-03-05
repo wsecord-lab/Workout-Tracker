@@ -24,6 +24,7 @@ export function ExportToExcelCard({ clients }: Props) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   if (!isTrainer) return null;
 
@@ -36,7 +37,7 @@ export function ExportToExcelCard({ clients }: Props) {
     setError(null);
   }
 
-  function handleExport() {
+  async function handleExport() {
     setError(null);
     if (!includeClients && !includeSessions && !includeSets) {
       setError("Select at least one sheet to include (Clients, Sessions, or Sets).");
@@ -58,7 +59,25 @@ export function ExportToExcelCard({ clients }: Props) {
     if (endDate) params.set("endDate", endDate);
 
     const url = `/api/export/excel?${params.toString()}`;
-    window.location.href = url;
+    setIsExporting(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || data.error || "Export failed.");
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "workout-export.xlsx";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      setError("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   return (
@@ -180,10 +199,12 @@ export function ExportToExcelCard({ clients }: Props) {
 
         <button
           type="button"
-          onClick={handleExport}
+          onClick={() => void handleExport()}
+          disabled={isExporting}
           className="btn-primary"
+          aria-busy={isExporting}
         >
-          Export to Excel
+          {isExporting ? "Preparing export…" : "Export to Excel"}
         </button>
       </div>
     </section>

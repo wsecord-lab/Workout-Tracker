@@ -25,6 +25,8 @@ model User {
   accounts      Account[]
   sessions      Session[]
   clients       Client[]
+  ownedClients  Client[]         @relation("ClientTrainer")
+  trainerExerciseCatalog TrainerExerciseCatalogItem[]
   measurements  Measurement[]
   assignedAsTrainer TrainerClient[]  @relation("TrainerAssignments")
   assignedClients   TrainerClient[]  @relation("AssignedClients")
@@ -71,14 +73,30 @@ model Client {
   id            String    @id @default(cuid())
   userId        String?
   user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  trainerId     String?
+  trainer       User?     @relation("ClientTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
   name          String
   age           Int
   heightCm      Float
   bodyWeightKg  Float
   sessions      WorkoutSession[]
   weightRecords ClientWeightRecord[]
+  metricsCache  ClientMetricsCache[]
 
   @@index([userId])
+  @@index([trainerId])
+}
+
+model ClientMetricsCache {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  rangeKey    String   // e.g. "7d" | "30d" | "90d"
+  computedAt  DateTime @default(now())
+  payloadJson String   @db.Text
+
+  @@unique([clientId, rangeKey])
+  @@index([clientId])
 }
 
 model ClientWeightRecord {
@@ -150,6 +168,21 @@ model ExerciseCatalog {
   exercises Exercise[]
 }
 
+// Trainer-scoped master exercise list (each trainer has their own)
+model TrainerExerciseCatalogItem {
+  id             String   @id @default(cuid())
+  trainerId      String
+  trainer        User     @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([trainerId, normalizedName])
+  @@index([trainerId])
+}
+
 model Exercise {
   id                  String           @id @default(cuid())
   name                String
@@ -157,7 +190,9 @@ model Exercise {
   session             WorkoutSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   catalogExerciseId   String?
   catalogExercise     ExerciseCatalog? @relation(fields: [catalogExerciseId], references: [id], onDelete: SetNull)
+  orderIndex          Int              @default(0)
   sets                Set[]
+  deletedAt           DateTime?
 
   @@index([sessionId])
   @@index([catalogExerciseId])
@@ -169,8 +204,35 @@ model Set {
   reps       Int
   rpe        Float?
   notes      String?
+  orderIndex Int      @default(0)
   exerciseId String
   exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 
   @@index([exerciseId])
+  @@index([exerciseId, orderIndex])
+}
+
+// —— Workout Templates (trainer-only, global) ———
+model WorkoutTemplate {
+  id         String   @id @default(cuid())
+  name       String
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  items      WorkoutTemplateItem[]
+
+  @@index([isArchived])
+}
+
+model WorkoutTemplateItem {
+  id           String          @id @default(cuid())
+  templateId   String
+  orderIndex   Int
+  exerciseName String
+  normalizedName String
+  template     WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@unique([templateId, orderIndex])
 }

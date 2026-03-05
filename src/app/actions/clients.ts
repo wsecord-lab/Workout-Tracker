@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { validateClient } from "@/lib/validations";
+import { auth } from "@/auth";
 
 export type ClientActionResult =
   | { ok: true; id?: string }
   | { ok: false; errors: Record<string, string> };
 
 export async function createClient(formData: FormData): Promise<ClientActionResult> {
-  await requireTrainer();
+  const user = await requireTrainer();
   const result = validateClient(
     {
       name: formData.get("name"),
@@ -25,6 +26,7 @@ export async function createClient(formData: FormData): Promise<ClientActionResu
   const client = await prisma.client.create({
     data: {
       ...result.data,
+      trainerId: user.id,
       weightRecords: {
         create: { weightKg: result.data.bodyWeightKg },
       },

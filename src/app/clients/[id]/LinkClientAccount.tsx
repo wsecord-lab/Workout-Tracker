@@ -2,27 +2,27 @@
 
 import { useState, useTransition } from "react";
 import { linkUserToClient } from "@/app/actions/clients";
+import { useToast } from "@/components/ui/toast/use-toast";
 
 export function LinkClientAccount({
   clientId,
 }: {
   clientId: string;
 }) {
+  const { addToast } = useToast();
   const [email, setEmail] = useState("");
-  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMessage(null);
     startTransition(async () => {
       const result = await linkUserToClient(clientId, email);
       if (result.ok) {
-        setMessage({ type: "ok", text: "Client account linked." });
+        addToast("success", "Client account linked.");
         setEmail("");
         return;
       }
-      setMessage({ type: "error", text: result.error });
+      addToast("error", result.error);
     });
   }
 
@@ -49,16 +49,14 @@ export function LinkClientAccount({
         <button
           type="submit"
           disabled={isPending}
-          className="btn-primary text-sm py-1.5"
+          className="btn-primary text-sm py-1.5 inline-flex items-center gap-2"
         >
+          {isPending && (
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />
+          )}
           {isPending ? "Linking…" : "Link account"}
         </button>
       </form>
-      {message && (
-        <p className={`mt-2 text-sm ${message.type === "ok" ? "text-green-600" : "text-error"}`}>
-          {message.text}
-        </p>
-      )}
     </div>
   );
 }

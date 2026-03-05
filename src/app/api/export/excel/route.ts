@@ -47,13 +47,23 @@ export async function GET(request: NextRequest) {
     startDate = epoch;
   }
 
-  const clientFilter = clientId !== "all" ? { id: clientId } : undefined;
+  const trainerId = session.user.id;
+  if (clientId !== "all") {
+    const client = await prisma.client.findFirst({
+      where: { id: clientId, trainerId },
+      select: { id: true },
+    });
+    if (!client) {
+      return NextResponse.json({ error: "Forbidden or client not found." }, { status: 403 });
+    }
+  }
+  const clientWhere = clientId !== "all" ? { id: clientId, trainerId } : { trainerId };
 
   const workbook = new ExcelJS.Workbook();
 
   if (includeClients === "1") {
     const clients = await prisma.client.findMany({
-      where: clientFilter,
+      where: clientWhere,
       orderBy: { name: "asc" },
       select: {
         name: true,
@@ -86,7 +96,7 @@ export async function GET(request: NextRequest) {
   if (includeSessions === "1") {
     const sessions = await prisma.workoutSession.findMany({
       where: {
-        ...(clientFilter ? { clientId: clientFilter.id } : {}),
+        client: clientWhere,
         date: { gte: startDate, lte: endDate },
       },
       orderBy: [{ clientId: "asc" }, { date: "asc" }],
@@ -118,7 +128,7 @@ export async function GET(request: NextRequest) {
   if (includeSets === "1") {
     const sessionsInRange = await prisma.workoutSession.findMany({
       where: {
-        ...(clientFilter ? { clientId: clientFilter.id } : {}),
+        client: clientWhere,
         date: { gte: startDate, lte: endDate },
       },
       select: { id: true },

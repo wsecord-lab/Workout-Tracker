@@ -106,10 +106,13 @@ export async function createClientLoginAndLink(
     const clientIdVal = existingClientId!.trim();
     const client = await prisma.client.findUnique({
       where: { id: clientIdVal },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, trainerId: true },
     });
     if (!client) {
       return { ok: false, errors: { existingClientId: "Client not found." } };
+    }
+    if (client.trainerId != null && client.trainerId !== session.user.id) {
+      return { ok: false, errors: { _: "You do not have access to this client." } };
     }
     if (client.userId != null) {
       return {
@@ -153,6 +156,7 @@ export async function createClientLoginAndLink(
       data: {
         ...clientResult.data,
         userId: user.id,
+        trainerId: session.user.id,
         weightRecords: {
           create: { weightKg: clientResult.data.bodyWeightKg },
         },
@@ -215,7 +219,7 @@ export async function changeMyPassword(
 export type UnlinkedClient = { id: string; name: string };
 
 /**
- * Trainer-only: List clients that have no linked user account (userId is null).
+ * Trainer-only: List clients that have no linked user account (userId is null), for the current trainer.
  */
 export async function listUnlinkedClients(): Promise<UnlinkedClient[]> {
   const session = await auth();
@@ -224,7 +228,7 @@ export async function listUnlinkedClients(): Promise<UnlinkedClient[]> {
   if (role !== TRAINER) return [];
 
   const clients = await prisma.client.findMany({
-    where: { userId: null },
+    where: { userId: null, trainerId: session.user.id },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
@@ -239,7 +243,7 @@ export type ClientAccountRow = {
 };
 
 /**
- * Trainer-only: List all CLIENT users with their linked client (if any).
+ * Trainer-only: List CLIENT users whose linked client is owned by this trainer.
  */
 export async function listClientAccounts(): Promise<ClientAccountRow[]> {
   const session = await auth();
@@ -247,21 +251,21 @@ export async function listClientAccounts(): Promise<ClientAccountRow[]> {
   const role = (session.user as { role?: Role }).role;
   if (role !== TRAINER) return [];
 
-  const users = await prisma.user.findMany({
-    where: { role: CLIENT },
-    orderBy: { email: "asc" },
+  const clients = await prisma.client.findMany({
+    where: { trainerId: session.user.id, userId: { not: null } },
+    orderBy: { name: "asc" },
     select: {
       id: true,
-      email: true,
-      clients: { select: { id: true, name: true }, take: 1 },
+      name: true,
+      user: { select: { id: true, email: true } },
     },
   });
 
-  return users.map((u) => ({
-    userId: u.id,
-    email: u.email,
-    clientId: u.clients[0]?.id ?? null,
-    clientName: u.clients[0]?.name ?? null,
+  return clients.map((c) => ({
+    userId: c.user!.id,
+    email: c.user!.email,
+    clientId: c.id,
+    clientName: c.name,
   }));
 }
 
@@ -285,11 +289,12 @@ export async function removeClientAccount(
 }
 
 /**
- * Trainer-only: List all clients (id, name) for dropdowns.
+ * Trainer-only: List clients owned by this trainer (id, name) for dropdowns.
  */
 export async function listClientsBasic(): Promise<{ id: string; name: string }[]> {
-  await requireTrainer();
+  const user = await requireTrainer();
   return prisma.client.findMany({
+    where: { trainerId: user.id },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

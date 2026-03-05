@@ -5,6 +5,7 @@ import { getClientSessionsPaginated } from "@/lib/db/workouts";
 import { formatHeight, formatWeight } from "@/lib/units";
 import { createSession } from "@/app/actions/sessions";
 import { listExerciseCatalog } from "@/app/actions/exercises";
+import { listTrainerExercisesForClient } from "@/app/actions/trainer-exercises";
 import { requireUser, assertClientAccess } from "@/lib/authz";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
@@ -38,13 +39,16 @@ export default async function ClientDetailPage({
       age: true,
       heightCm: true,
       bodyWeightKg: true,
+      trainerId: true,
     },
   });
   if (!client) notFound();
 
   const [{ sessions, hasMore }, catalog] = await Promise.all([
     getClientSessionsPaginated({ clientId: id, take }),
-    listExerciseCatalog(),
+    client.trainerId
+      ? listTrainerExercisesForClient(client.trainerId)
+      : listExerciseCatalog(),
   ]);
 
   return (
@@ -118,7 +122,13 @@ export default async function ClientDetailPage({
         ) : (
           <>
             {sessions.map((session) => (
-              <SessionBlock key={session.id} session={session} catalog={catalog} />
+              <SessionBlock
+                key={session.id}
+                session={session}
+                catalog={catalog}
+                trainerId={client.trainerId}
+                showPreviousBest={!isClient}
+              />
             ))}
             <LoadMoreSessions
               clientId={id}

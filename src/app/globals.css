@@ -10,12 +10,13 @@
   }
 }
 
-/* Button: primary */
+/* Button: primary — 44px min tap target on mobile */
 .btn-primary {
   @apply rounded bg-primary px-4 py-2 font-medium text-white outline-none transition-colors
     hover:bg-primary-hover active:bg-primary-active
     focus:ring-2 focus:ring-primary focus:ring-offset-2
-    disabled:bg-primary-disabled disabled:opacity-70 disabled:pointer-events-none;
+    disabled:bg-primary-disabled disabled:opacity-70 disabled:pointer-events-none
+    min-h-[44px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center;
 }
 
 /* Button: secondary */
@@ -23,15 +24,23 @@
   @apply rounded border border-border bg-surface px-4 py-2 font-medium text-[var(--text)] outline-none transition-colors
     hover:bg-background hover:border-secondary
     focus:ring-2 focus:ring-primary focus:ring-offset-2
-    disabled:opacity-50 disabled:pointer-events-none;
+    disabled:opacity-50 disabled:pointer-events-none
+    min-h-[44px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center;
 }
 
-/* Form inputs */
+/* Form inputs — scroll-margin so focused field stays visible when keyboard opens */
 .input {
   @apply w-full rounded border border-border bg-surface px-3 py-2 text-[var(--text)] outline-none
     placeholder:text-muted
     focus:border-primary focus:ring-1 focus:ring-primary
     disabled:opacity-50;
+  scroll-margin-bottom: 20vh;
+  scroll-margin-top: 12vh;
+}
+
+/* Tap target: interactive elements meet ~44px minimum (use on buttons/links/toggles) */
+.tap-target {
+  @apply min-h-[44px] min-w-[44px] inline-flex items-center justify-center;
 }
 
 /* Card */

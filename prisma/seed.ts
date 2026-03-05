@@ -31,6 +31,11 @@ async function main() {
     },
     update: { passwordHash: trainerPasswordHash },
   });
+  const trainer = await prisma.user.findUnique({
+    where: { email: EXAMPLE_TRAINER_EMAIL },
+    select: { id: true },
+  });
+  const trainerId = trainer!.id;
 
   // —— Example client login account (role CLIENT) ——
   const clientPasswordHash = await hash(EXAMPLE_CLIENT_PASSWORD, 10);
@@ -56,6 +61,7 @@ async function main() {
         heightCm: 175,
         bodyWeightKg: 78,
         userId: exampleUser.id,
+        trainerId,
         weightRecords: {
           create: [
             { weightKg: 79 },
@@ -272,6 +278,7 @@ async function main() {
         age: 28,
         heightCm: 165,
         bodyWeightKg: 62,
+        trainerId,
         weightRecords: { create: { weightKg: 62 } },
       },
     });
@@ -304,6 +311,7 @@ async function main() {
         age: 35,
         heightCm: 180,
         bodyWeightKg: 82,
+        trainerId,
         weightRecords: { create: { weightKg: 82 } },
       },
     });
@@ -387,6 +395,15 @@ async function main() {
       }
     }
     console.log("Added extra sessions for Bob Jones.");
+  }
+
+  // Assign any clients without a trainer to the main trainer (migration from pre-tenant schema)
+  const updated = await prisma.client.updateMany({
+    where: { trainerId: null },
+    data: { trainerId },
+  });
+  if (updated.count > 0) {
+    console.log(`Assigned ${updated.count} client(s) to default trainer.`);
   }
 }
 

@@ -31,16 +31,36 @@ export async function requireTrainer(): Promise<AuthUser> {
 }
 
 /**
+ * Trainer may only access clients they own (client.trainerId === session.user.id).
+ * Legacy clients with trainerId == null are allowed for any trainer (back compat).
+ */
+export async function assertTrainerOwnsClient(clientId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const role = (session.user as AuthUser).role;
+  if (role !== "TRAINER") return;
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { trainerId: true },
+  });
+  if (!client) redirect("/");
+  if (client.trainerId != null && client.trainerId !== session.user.id) redirect("/");
+}
+
+/**
  * Assert the current user is allowed to access the given client.
- * - TRAINER: allowed.
+ * - TRAINER: allowed only if they own the client (assertTrainerOwnsClient).
  * - CLIENT: allowed only when Client.userId === session.user.id for that clientId.
- * Redirects or throws otherwise.
+ * Redirects otherwise.
  */
 export async function assertClientAccess(clientId: string): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const role = (session.user as AuthUser).role;
-  if (role === "TRAINER") return;
+  if (role === "TRAINER") {
+    await assertTrainerOwnsClient(clientId);
+    return;
+  }
   if (role === "CLIENT") {
     const client = await prisma.client.findUnique({
       where: { id: clientId },

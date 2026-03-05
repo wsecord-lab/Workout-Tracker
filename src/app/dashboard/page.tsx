@@ -4,9 +4,10 @@ import { requireTrainer } from "@/lib/authz";
 import { ClientSearch } from "@/components/ClientSearch";
 
 export default async function DashboardPage() {
-  await requireTrainer();
+  const user = await requireTrainer();
 
   const clients = await prisma.client.findMany({
+    where: { trainerId: user.id },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/authz";
-import { ChangePasswordForm } from "@/app/settings/password/ChangePasswordForm";
+import { ChangePasswordForm } from "./ChangePasswordForm";
 
 export default async function ChangePasswordPage() {
   await requireUser();

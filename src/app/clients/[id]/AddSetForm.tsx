@@ -1,10 +1,19 @@
 "use client";
 
-import React, { useTransition, useState, useEffect } from "react";
+import React, { useTransition, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createSet, createSetsBulk } from "@/app/actions/sets";
 import { toDisplay } from "@/lib/units";
 import type { Set } from "@prisma/client";
+
+function Spinner({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-block animate-spin rounded-full border-2 border-current border-t-transparent ${className}`}
+      aria-hidden
+    />
+  );
+}
 
 const RPE_OPTIONS: (number | "")[] = [
   "",
@@ -40,6 +49,8 @@ export function AddSetForm({
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const singleSetFormRef = useRef<HTMLFormElement>(null);
+  const scrollToNewSetRef = useRef(false);
 
   const [numBulkSets, setNumBulkSets] = useState(1);
   const [copyFromPrevious, setCopyFromPrevious] = useState(false);
@@ -87,12 +98,35 @@ export function AddSetForm({
         setReps("");
         setRpe("");
         setNotes("");
+        scrollToNewSetRef.current = true;
         router.refresh();
         return;
       }
       setErrors(result.errors);
     });
   }
+
+  useEffect(() => {
+    if (!scrollToNewSetRef.current || !lastSet?.id) return;
+    const t = setTimeout(() => {
+      const formEl = singleSetFormRef.current;
+      const wrapper = formEl?.parentElement;
+      const ul = wrapper?.previousElementSibling;
+      if (ul?.tagName === "UL") {
+        const lastLi = ul.lastElementChild;
+        if (lastLi instanceof HTMLElement) {
+          lastLi.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          lastLi.classList.add("ring-2", "ring-primary/60", "ring-offset-2", "rounded");
+          const clearHighlight = () => {
+            lastLi.classList.remove("ring-2", "ring-primary/60", "ring-offset-2", "rounded");
+          };
+          window.setTimeout(clearHighlight, 1800);
+        }
+      }
+      scrollToNewSetRef.current = false;
+    }, 120);
+    return () => clearTimeout(t);
+  }, [lastSet?.id]);
 
   function updateBulkRow(i: number, field: keyof BulkRow, value: string) {
     setBulkRows((prev) => {
@@ -155,8 +189,8 @@ export function AddSetForm({
 
   return (
     <div className="mt-2 space-y-4">
-      <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2 text-sm">
-        <div>
+      <form ref={singleSetFormRef} onSubmit={handleSubmit} className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end md:gap-2 text-sm">
+        <div className="w-full md:w-auto">
           <label htmlFor={`weight-${exerciseId}`} className="sr-only">Weight (lb)</label>
           <input
             id={`weight-${exerciseId}`}
@@ -166,12 +200,12 @@ export function AddSetForm({
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
             placeholder="lb"
-            className="input w-20 px-2 py-1 text-sm"
+            className="input w-full md:w-20 min-h-[44px] md:min-h-0 px-2 py-1 text-sm"
             disabled={isPending}
           />
           {errors.weightLb && <p className="text-xs text-error">{errors.weightLb}</p>}
         </div>
-        <div>
+        <div className="w-full md:w-auto">
           <label htmlFor={`reps-${exerciseId}`} className="sr-only">Reps</label>
           <input
             id={`reps-${exerciseId}`}
@@ -180,18 +214,35 @@ export function AddSetForm({
             value={reps}
             onChange={(e) => setReps(e.target.value)}
             placeholder="reps"
-            className="input w-16 px-2 py-1 text-sm"
+            className="input w-full md:w-16 min-h-[44px] md:min-h-0 px-2 py-1 text-sm"
             disabled={isPending}
           />
           {errors.reps && <p className="text-xs text-error">{errors.reps}</p>}
         </div>
-        <div>
-          <label htmlFor={`rpe-${exerciseId}`} className="sr-only">RPE (optional)</label>
+        <div className="w-full md:w-auto flex gap-2 items-center">
+          <label htmlFor={`rpe-num-${exerciseId}`} className="sr-only md:hidden">RPE (optional)</label>
+          <input
+            id={`rpe-num-${exerciseId}`}
+            type="number"
+            min={1}
+            max={10}
+            step={0.5}
+            value={rpe === "" ? "" : rpe}
+            onChange={(e) => {
+              const v = e.target.value;
+              setRpe(v === "" ? "" : Number(v));
+            }}
+            placeholder="RPE (optional)"
+            className="input w-full md:w-16 min-h-[44px] md:min-h-0 px-2 py-1 text-sm md:hidden"
+            disabled={isPending}
+            aria-label="RPE (optional)"
+          />
+          <label htmlFor={`rpe-${exerciseId}`} className="sr-only hidden md:inline">RPE (optional)</label>
           <select
             id={`rpe-${exerciseId}`}
             value={rpe === "" ? "" : rpe}
             onChange={(e) => setRpe(e.target.value === "" ? "" : Number(e.target.value))}
-            className="input w-16 px-2 py-1 text-sm"
+            className="input w-16 px-2 py-1 text-sm hidden md:block min-h-[44px] lg:min-h-0"
             disabled={isPending}
           >
             {RPE_OPTIONS.map((v) => (
@@ -202,7 +253,7 @@ export function AddSetForm({
           </select>
           {errors.rpe && <p className="text-xs text-error">{errors.rpe}</p>}
         </div>
-        <div className="min-w-[120px] flex-1">
+        <div className="min-w-0 flex-1 w-full md:min-w-[120px] md:flex-initial">
           <label htmlFor={`notes-${exerciseId}`} className="sr-only">Notes (optional)</label>
           <input
             id={`notes-${exerciseId}`}
@@ -210,29 +261,39 @@ export function AddSetForm({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Notes"
-            className="input w-full px-2 py-1 text-sm"
+            className="input w-full min-h-[44px] md:min-h-0 px-2 py-1 text-sm"
             disabled={isPending}
           />
           {errors.notes && <p className="text-xs text-error">{errors.notes}</p>}
         </div>
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded bg-secondary px-2 py-1 text-white outline-none hover:bg-secondary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50"
-        >
-          {isPending ? "…" : "Add set"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="tap-target w-full md:w-auto rounded bg-secondary px-3 py-2 text-white outline-none hover:bg-secondary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none inline-flex items-center justify-center gap-1.5"
+          >
+            {isPending ? (
+              <>
+                <Spinner />
+                <span>Saving…</span>
+              </>
+            ) : (
+              "Add set"
+            )}
+          </button>
+          {errors._ && <p className="text-xs text-error">{errors._}</p>}
+        </div>
       </form>
 
       <section className="rounded border border-border bg-background/50 p-3">
         <h4 className="mb-2 text-sm font-medium text-[var(--text)]">Add Sets</h4>
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
-          <label className="flex items-center gap-2">
+        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 text-sm">
+          <label className="flex items-center gap-2 tap-target">
             <span className="text-muted">Number of sets</span>
             <select
               value={numBulkSets}
               onChange={(e) => setNumBulkSets(Number(e.target.value))}
-              className="input w-16 py-1 text-sm"
+              className="input w-16 min-h-[44px] sm:min-h-0 py-1 text-sm"
               disabled={isPending}
             >
               {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
@@ -243,12 +304,12 @@ export function AddSetForm({
             </select>
           </label>
           {lastSet && (
-            <label className="flex items-center gap-2 text-muted">
+            <label className="flex items-center gap-2 text-muted min-h-[44px] sm:min-h-0 items-center cursor-pointer py-1">
               <input
                 type="checkbox"
                 checked={copyFromPrevious}
                 onChange={(e) => setCopyFromPrevious(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                className="h-5 w-5 rounded border-border text-primary focus:ring-primary shrink-0"
                 disabled={isPending}
               />
               Copy values from previous set
@@ -256,7 +317,7 @@ export function AddSetForm({
           )}
         </div>
         <form onSubmit={handleBulkSubmit} className="space-y-2">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto -mx-1">
             <div className="grid min-w-[400px] grid-cols-[auto_1fr_1fr_1fr_2fr] gap-2 text-sm md:grid-cols-[auto_80px_70px_70px_1fr]">
               <div className="font-medium text-muted">Set #</div>
               <div className="font-medium text-muted">Weight</div>
@@ -336,14 +397,21 @@ export function AddSetForm({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded bg-primary px-3 py-1 text-sm text-white outline-none hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50"
+            className="tap-target rounded bg-primary px-3 py-2 text-sm text-white outline-none hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none inline-flex items-center justify-center gap-1.5"
           >
-            {isPending ? "…" : `Add ${displayRows.length} Sets`}
+            {isPending ? (
+              <>
+                <Spinner />
+                <span>Saving…</span>
+              </>
+            ) : (
+              `Add ${displayRows.length} Sets`
+            )}
           </button>
         </form>
 
         {lastSet && (
-          <form onSubmit={handleRepeatLast} className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">
+          <form onSubmit={handleRepeatLast} className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 border-t border-border pt-3 text-sm">
             <span className="text-muted">Repeat last set:</span>
             <input
               type="number"
@@ -352,15 +420,22 @@ export function AddSetForm({
               value={repeatCountStr}
               onChange={(e) => setRepeatCountStr(e.target.value)}
               placeholder="1–10"
-              className="input w-14 py-0.5 text-sm"
+              className="input w-full sm:w-14 min-h-[44px] sm:min-h-0 py-1 sm:py-0.5 text-sm"
               disabled={isPending}
             />
             <button
               type="submit"
               disabled={isPending}
-              className="rounded bg-primary px-2 py-0.5 text-sm text-white outline-none hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50"
+              className="tap-target rounded bg-primary px-3 py-2 text-sm text-white outline-none hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none inline-flex items-center justify-center gap-1.5"
             >
-              + Add {repeatCountStr === "" ? "?" : Math.max(1, Math.min(10, parseInt(repeatCountStr, 10) || 1))} sets like last
+              {isPending ? (
+                <>
+                  <Spinner />
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>+ Add {repeatCountStr === "" ? "?" : Math.max(1, Math.min(10, parseInt(repeatCountStr, 10) || 1))} sets like last</>
+              )}
             </button>
           </form>
         )}
