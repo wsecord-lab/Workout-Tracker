@@ -259,6 +259,8 @@ function add7DayTrend(points: ChartPoint[]): void {
   }
 }
 
+type BodyWeightTooltipPayload = { payload: ChartPoint; name?: string; value?: number; dataKey?: string };
+
 function BodyWeightTooltip({
   active,
   payload,
@@ -267,7 +269,7 @@ function BodyWeightTooltip({
   onClear,
 }: {
   active?: boolean;
-  payload?: { payload: ChartPoint; name?: string; value?: number; dataKey?: string }[];
+  payload?: readonly BodyWeightTooltipPayload[];
   showTrend: boolean;
   isPinned?: boolean;
   onClear?: () => void;
@@ -316,15 +318,17 @@ function ChartDot({
   cx?: number;
   cy?: number;
   index?: number;
-  r?: number;
+  r?: number | string;
   fill?: string;
   isPinned?: boolean;
   onPin?: (index: number) => void;
   stroke?: string;
-  strokeWidth?: number;
+  strokeWidth?: number | string;
 }) {
-  const radius = isPinned ? 8 : r ?? 4;
+  const rNum = typeof r === "number" ? r : typeof r === "string" ? Number(r) : 4;
+  const radius = isPinned ? 8 : rNum;
   const showStroke = isPinned || stroke;
+  const strokeWidthNum = typeof strokeWidth === "number" ? strokeWidth : typeof strokeWidth === "string" ? Number(strokeWidth) : 2;
   return (
     <circle
       cx={cx}
@@ -332,7 +336,7 @@ function ChartDot({
       r={radius}
       fill={fill}
       stroke={showStroke ? (stroke ?? "var(--surface)") : undefined}
-      strokeWidth={showStroke ? (strokeWidth ?? 2) : undefined}
+      strokeWidth={showStroke ? strokeWidthNum : undefined}
       style={{ cursor: "pointer" }}
       onClick={(e) => { e.stopPropagation(); onPin?.(index ?? 0); }}
       onTouchEnd={(e) => { e.preventDefault(); onPin?.(index ?? 0); }}
@@ -561,7 +565,8 @@ export function BodyWeightChart({
                   <Tooltip
                     content={(props) => (
                       <BodyWeightTooltip
-                        {...props}
+                        active={props.active}
+                        payload={props.payload as readonly BodyWeightTooltipPayload[] | undefined}
                         showTrend={showTrend}
                         isPinned={pinnedIndex !== null}
                         onClear={() => setPinnedIndex(null)}
@@ -616,8 +621,8 @@ export function BodyWeightChart({
                   {filteredPoints.length > 1 && (
                     <Brush
                       dataKey="dateNum"
-                      startIndex={draftRange.startIndex}
-                      endIndex={draftRange.endIndex}
+                      startIndex={draftRange?.startIndex ?? 0}
+                      endIndex={draftRange?.endIndex ?? Math.max(0, n - 1)}
                       onChange={(e) => {
                         if (e?.startIndex != null && e?.endIndex != null) {
                           setDraftBrush({ startIndex: e.startIndex, endIndex: e.endIndex });
@@ -732,7 +737,7 @@ function WeightChartTooltipContent({
   selectedMetric,
 }: {
   active?: boolean;
-  payload?: TooltipPayloadItem[];
+  payload?: readonly TooltipPayloadItem[];
   showReps?: boolean;
   isPinned?: boolean;
   onClear?: () => void;
@@ -1047,7 +1052,8 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
                   <Tooltip
                     content={(props) => (
                       <WeightChartTooltipContent
-                        {...props}
+                        active={props.active}
+                        payload={props.payload as readonly TooltipPayloadItem[] | undefined}
                         showReps
                         selectedMetric={selectedMetric}
                         isPinned={pinnedIndex !== null}
@@ -1096,8 +1102,8 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
                     stroke="var(--border)"
                     fill="var(--surface)"
                     travellerWidth={8}
-                    startIndex={draftRange.startIndex}
-                    endIndex={draftRange.endIndex}
+                    startIndex={draftRange?.startIndex ?? 0}
+                    endIndex={draftRange?.endIndex ?? Math.max(0, dataLen - 1)}
                     onChange={(next) => {
                       if (next.startIndex != null && next.endIndex != null) {
                         setDraftBrush({ startIndex: next.startIndex, endIndex: next.endIndex });
