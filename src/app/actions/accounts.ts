@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { requireTrainer } from "@/lib/authz";
 import {
   normalizeEmail,
   hashPassword,
@@ -262,4 +263,34 @@ export async function listClientAccounts(): Promise<ClientAccountRow[]> {
     clientId: u.clients[0]?.id ?? null,
     clientName: u.clients[0]?.name ?? null,
   }));
+}
+
+/**
+ * Trainer-only: Remove a client account (delete User). Client profile is unlinked (userId set to null).
+ */
+export async function removeClientAccount(
+  userId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireTrainer();
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, email: true },
+  });
+  if (!user) return { ok: false, error: "User not found." };
+  if (user.role !== CLIENT) return { ok: false, error: "Only client accounts can be removed." };
+  await prisma.user.delete({ where: { id: userId } });
+  revalidatePath("/dashboard/manage-accounts");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+/**
+ * Trainer-only: List all clients (id, name) for dropdowns.
+ */
+export async function listClientsBasic(): Promise<{ id: string; name: string }[]> {
+  await requireTrainer();
+  return prisma.client.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 }

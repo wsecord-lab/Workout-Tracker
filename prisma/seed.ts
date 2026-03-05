@@ -51,9 +51,35 @@ async function main() {
         heightCm: 175,
         bodyWeightKg: 78,
         userId: exampleUser.id,
-        weightRecords: { create: [{ weightKg: 78 }, { weightKg: 77.5 }] },
+        weightRecords: {
+          create: [
+            { weightKg: 79 },
+            { weightKg: 78.5 },
+            { weightKg: 78 },
+            { weightKg: 77.5 },
+            { weightKg: 77.8 },
+            { weightKg: 77.2 },
+            { weightKg: 77 },
+            { weightKg: 76.8 },
+          ],
+        },
       },
     });
+  } else {
+    const wrCount = await prisma.clientWeightRecord.count({ where: { clientId: demoClient.id } });
+    if (wrCount < 8) {
+      const baseDate = Date.now() - 60 * 24 * 60 * 60 * 1000;
+      const weights = [79, 78.5, 78, 77.5, 77.8, 77.2, 77, 76.8];
+      for (let i = 0; i < weights.length; i++) {
+        await prisma.clientWeightRecord.create({
+          data: {
+            clientId: demoClient.id,
+            weightKg: weights[i],
+            recordedAt: new Date(baseDate + i * 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+    }
   }
 
   const existingSessions = await prisma.workoutSession.findMany({
@@ -89,6 +115,96 @@ async function main() {
         { weightKg: 85, reps: 5, exerciseId: squat.id, rpe: 8.5 },
       ],
     });
+  }
+
+  // —— Bulk sample sessions for demo client (past ~10 weeks) ——
+  const demoSessionCount = await prisma.workoutSession.count({
+    where: { clientId: demoClient.id },
+  });
+  const TARGET_DEMO_SESSIONS = 24;
+  if (demoSessionCount < TARGET_DEMO_SESSIONS) {
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const sessionTemplates: { name: string; exercises: { name: string; sets: { weightKg: number; reps: number; rpe?: number; notes?: string }[] }[] }[] = [
+      {
+        name: "Push day",
+        exercises: [
+          { name: "Bench Press", sets: [{ weightKg: 60, reps: 10, rpe: 7 }, { weightKg: 65, reps: 8, rpe: 8 }, { weightKg: 67.5, reps: 6, rpe: 8.5 }] },
+          { name: "Overhead Press", sets: [{ weightKg: 35, reps: 10, rpe: 7 }, { weightKg: 40, reps: 8, rpe: 8 }] },
+          { name: "Incline Dumbbell Press", sets: [{ weightKg: 22, reps: 10 }, { weightKg: 24, reps: 8, rpe: 8 }] },
+        ],
+      },
+      {
+        name: "Pull day",
+        exercises: [
+          { name: "Barbell Row", sets: [{ weightKg: 60, reps: 10, rpe: 7 }, { weightKg: 70, reps: 8, rpe: 8 }, { weightKg: 75, reps: 6, rpe: 8.5 }] },
+          { name: "Lat Pulldown", sets: [{ weightKg: 45, reps: 12 }, { weightKg: 50, reps: 10, rpe: 8 }] },
+          { name: "Face Pull", sets: [{ weightKg: 25, reps: 15 }, { weightKg: 27.5, reps: 12, rpe: 7 }] },
+        ],
+      },
+      {
+        name: "Legs",
+        exercises: [
+          { name: "Squat", sets: [{ weightKg: 80, reps: 8, rpe: 7 }, { weightKg: 90, reps: 6, rpe: 8 }, { weightKg: 95, reps: 5, rpe: 8.5, notes: "PR attempt" }] },
+          { name: "Romanian Deadlift", sets: [{ weightKg: 70, reps: 10 }, { weightKg: 80, reps: 8, rpe: 8 }] },
+          { name: "Leg Press", sets: [{ weightKg: 120, reps: 12 }, { weightKg: 140, reps: 10, rpe: 8 }] },
+        ],
+      },
+      {
+        name: "Upper body",
+        exercises: [
+          { name: "Bench Press", sets: [{ weightKg: 62.5, reps: 9, rpe: 7.5 }, { weightKg: 65, reps: 8, rpe: 8 }] },
+          { name: "Squat", sets: [{ weightKg: 82.5, reps: 6, rpe: 8 }, { weightKg: 85, reps: 5, rpe: 8.5 }] },
+        ],
+      },
+      {
+        name: "Full body",
+        exercises: [
+          { name: "Deadlift", sets: [{ weightKg: 100, reps: 5, rpe: 7 }, { weightKg: 110, reps: 4, rpe: 8 }, { weightKg: 115, reps: 3, rpe: 8.5 }] },
+          { name: "Bench Press", sets: [{ weightKg: 60, reps: 8, rpe: 8 }] },
+          { name: "Squat", sets: [{ weightKg: 85, reps: 5, rpe: 8 }] },
+        ],
+      },
+      {
+        name: "Lower body",
+        exercises: [
+          { name: "Squat", sets: [{ weightKg: 85, reps: 6, rpe: 7.5 }, { weightKg: 90, reps: 5, rpe: 8 }, { weightKg: 92.5, reps: 4, rpe: 8.5 }] },
+          { name: "Leg Curl", sets: [{ weightKg: 35, reps: 12 }, { weightKg: 40, reps: 10, rpe: 8 }] },
+          { name: "Calf Raise", sets: [{ weightKg: 50, reps: 15 }, { weightKg: 55, reps: 12 }] },
+        ],
+      },
+    ];
+    let added = 0;
+    for (let w = 0; w < 10 && added + demoSessionCount < TARGET_DEMO_SESSIONS; w++) {
+      for (let d = 0; d < 3 && added + demoSessionCount < TARGET_DEMO_SESSIONS; d++) {
+        const template = sessionTemplates[(added + d) % sessionTemplates.length];
+        const daysAgo = 7 * w + d * 2 + 1;
+        const sessionDate = new Date(now - daysAgo * day);
+        const session = await prisma.workoutSession.create({
+          data: {
+            clientId: demoClient.id,
+            name: template.name,
+            date: sessionDate,
+          },
+        });
+        for (const ex of template.exercises) {
+          const exercise = await prisma.exercise.create({
+            data: { name: ex.name, sessionId: session.id },
+          });
+          await prisma.set.createMany({
+            data: ex.sets.map((s) => ({
+              exerciseId: exercise.id,
+              weightKg: s.weightKg,
+              reps: s.reps,
+              rpe: s.rpe ?? null,
+              notes: s.notes ?? null,
+            })),
+          });
+        }
+        added++;
+      }
+    }
+    console.log(`Added ${added} sample sessions for Alex Demo.`);
   }
 
   console.log("\nExample trainer login:");
@@ -162,6 +278,69 @@ async function main() {
         { weightKg: 42.5, reps: 6, exerciseId: ex2b.id },
       ],
     });
+  }
+
+  // —— Extra sample sessions for Alice and Bob (trainer view) ——
+  const aliceCount = await prisma.workoutSession.count({ where: { clientId: client1.id } });
+  const bobCount = await prisma.workoutSession.count({ where: { clientId: client2.id } });
+  const day = 24 * 60 * 60 * 1000;
+
+  if (aliceCount < 8) {
+    const aliceSessions = [
+      { name: "Push", exercises: ["Bench Press", "OHP", "Tricep Pushdown"] },
+      { name: "Pull", exercises: ["Row", "Pulldown", "Curl"] },
+      { name: "Legs", exercises: ["Squat", "RDL", "Lunge"] },
+      { name: "Upper", exercises: ["Bench", "Row", "OHP"] },
+      { name: "Lower", exercises: ["Squat", "Leg Press", "Calf"] },
+    ];
+    for (let i = aliceCount; i < 8; i++) {
+      const t = aliceSessions[i % aliceSessions.length];
+      const session = await prisma.workoutSession.create({
+        data: {
+          clientId: client1.id,
+          name: t.name,
+          date: new Date(Date.now() - (i + 1) * 4 * day),
+        },
+      });
+      for (const exName of t.exercises) {
+        const ex = await prisma.exercise.create({ data: { name: exName, sessionId: session.id } });
+        await prisma.set.createMany({
+          data: [
+            { weightKg: 50 + i * 2, reps: 10, exerciseId: ex.id },
+            { weightKg: 55 + i * 2, reps: 8, exerciseId: ex.id, rpe: 8 },
+          ],
+        });
+      }
+    }
+    console.log("Added extra sessions for Alice Smith.");
+  }
+
+  if (bobCount < 8) {
+    const bobSessions = [
+      { name: "Strength", exercises: ["Deadlift", "Squat", "Bench"] },
+      { name: "Hypertrophy", exercises: ["Row", "OHP", "Leg Press"] },
+      { name: "Full body", exercises: ["Deadlift", "Bench", "Squat"] },
+    ];
+    for (let i = bobCount; i < 8; i++) {
+      const t = bobSessions[i % bobSessions.length];
+      const session = await prisma.workoutSession.create({
+        data: {
+          clientId: client2.id,
+          name: t.name,
+          date: new Date(Date.now() - (i + 1) * 4 * day),
+        },
+      });
+      for (const exName of t.exercises) {
+        const ex = await prisma.exercise.create({ data: { name: exName, sessionId: session.id } });
+        await prisma.set.createMany({
+          data: [
+            { weightKg: 80 + i * 3, reps: 6, exerciseId: ex.id, rpe: 8 },
+            { weightKg: 85 + i * 3, reps: 5, exerciseId: ex.id, rpe: 8.5 },
+          ],
+        });
+      }
+    }
+    console.log("Added extra sessions for Bob Jones.");
   }
 }
 

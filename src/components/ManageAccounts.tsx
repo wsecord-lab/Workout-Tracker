@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClientLoginAndLink } from "@/app/actions/accounts";
+import { createClientLoginAndLink, removeClientAccount } from "@/app/actions/accounts";
 import type { ClientAccountRow } from "@/app/actions/accounts";
 
 type Props = {
@@ -18,6 +18,16 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [linkMode, setLinkMode] = useState<"existing" | "new">("existing");
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+
+  async function handleRemove(userId: string, email: string) {
+    if (!confirm(`Remove the client account for ${email}? The client profile will be unlinked and they will no longer be able to sign in with this email.`)) return;
+    setRemovingUserId(userId);
+    const result = await removeClientAccount(userId);
+    setRemovingUserId(null);
+    if (result.ok) router.refresh();
+    else alert(result.error);
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -312,16 +322,24 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
                       )}
                     </td>
                     <td className="table-cell text-right">
-                      {row.clientId ? (
-                        <Link
-                          href={`/clients/${row.clientId}`}
-                          className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                      <div className="flex items-center justify-end gap-2">
+                        {row.clientId && (
+                          <Link
+                            href={`/clients/${row.clientId}`}
+                            className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                          >
+                            Open client →
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(row.userId, row.email)}
+                          disabled={removingUserId === row.userId}
+                          className="rounded bg-error px-3 py-1.5 text-sm font-medium text-white outline-none hover:bg-error-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-70"
                         >
-                          Open client →
-                        </Link>
-                      ) : (
-                        <span className="text-sm text-muted">—</span>
-                      )}
+                          {removingUserId === row.userId ? "Removing…" : "Remove"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -49,61 +49,68 @@ export default async function ClientDetailPage({
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div className={`flex flex-1 min-w-0 items-center gap-4`}>
+      {/* Client page header: stacked on mobile, horizontal on md+ */}
+      <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+        <div className="flex min-w-0 flex-col gap-2 md:flex-row md:flex-1 md:items-center md:gap-4">
           {!isClient && (
             <Link
               href="/"
-              className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0"
+              className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0 w-fit"
             >
               ← Clients
             </Link>
           )}
-          <h1 className="text-2xl font-bold text-[var(--text)] shrink-0">{client.name}</h1>
-          <div className="flex items-center gap-3">
+          <h1 className="break-words text-2xl font-bold text-[var(--text)] md:text-2xl md:shrink-0">
+            {client.name}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
             <Link
               href={isClient ? "/charts" : `/charts?clientId=${id}`}
-              className="btn-primary text-sm"
+              className="btn-primary text-sm w-full md:w-auto"
             >
               View Charts
             </Link>
             <Link
               href={`/clients/${id}/calendar`}
-              className="btn-primary text-sm"
+              className="btn-primary text-sm w-full md:w-auto"
             >
               Calendar
             </Link>
+            {!isClient && (
+              <Link
+                href={`/clients/${id}/edit`}
+                className="btn-primary text-sm w-full md:w-auto"
+              >
+                Manage This Account
+              </Link>
+            )}
+            {isClient && (
+              <>
+                <Link
+                  href={`/clients/${id}/edit`}
+                  className="btn-primary text-sm w-full md:w-auto"
+                >
+                  Manage Account
+                </Link>
+                <span className="w-full md:w-auto">
+                  <LogoutButton variant="primary" className="w-full md:w-auto" />
+                </span>
+              </>
+            )}
           </div>
         </div>
-        {!isClient && (
-          <div className="shrink-0 flex items-center gap-3">
-            <Link
-              href={`/clients/${id}/edit`}
-              className="btn-primary text-sm"
-            >
-              Manage This Account
-            </Link>
-          </div>
-        )}
-        {isClient && (
-          <div className="shrink-0 ml-4 flex items-center gap-3">
-            <Link
-              href={`/clients/${id}/edit`}
-              className="btn-primary text-sm"
-            >
-              Manage Account
-            </Link>
-            <LogoutButton variant="primary" />
-          </div>
-        )}
       </div>
       <p className="mb-6 text-sm text-muted">
         {client.age}y · {formatHeight(client.heightCm)} ·{" "}
         {formatWeight(client.bodyWeightKg)}
       </p>
-      <div className="mb-8 flex flex-wrap items-center gap-4">
-        <AddSessionButton clientId={id} createSession={createSession} />
-        <AddBiometricsButton clientId={id} />
+      <div className="mb-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
+        <AddSessionButton
+          clientId={id}
+          createSession={createSession}
+          className="w-full md:w-auto"
+        />
+        <AddBiometricsButton clientId={id} className="w-full md:w-auto" />
       </div>
       <div className="space-y-8">
         {sessions.length === 0 ? (

@@ -9,13 +9,7 @@ export default async function HomePage() {
   const clientId = await getClientIdForCurrentUser();
   if (user.role === "CLIENT") {
     if (clientId) redirect(`/clients/${clientId}`);
-    return (
-      <div>
-        <p className="text-muted">
-          Your account is not linked to a client profile yet. Contact your trainer to get linked.
-        </p>
-      </div>
-    );
+    redirect("/api/auth/signout?callbackUrl=/login");
   }
 
   const clients = await prisma.client.findMany({

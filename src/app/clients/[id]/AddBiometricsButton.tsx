@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { addBiometricRecord } from "@/app/actions/biometrics";
 
-export function AddBiometricsButton({ clientId }: { clientId: string }) {
+export function AddBiometricsButton({
+  clientId,
+  className = "",
+}: {
+  clientId: string;
+  className?: string;
+}) {
   const [showForm, setShowForm] = useState(false);
   const [weightLb, setWeightLb] = useState("");
   const [date, setDate] = useState(() => {
@@ -38,7 +44,7 @@ export function AddBiometricsButton({ clientId }: { clientId: string }) {
       <button
         type="button"
         onClick={() => setShowForm(true)}
-        className="btn-primary text-sm"
+        className={`btn-primary text-sm ${className}`.trim()}
       >
         Add biometrics
       </button>

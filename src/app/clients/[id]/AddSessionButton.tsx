@@ -5,9 +5,10 @@ import { useState, useTransition } from "react";
 type Props = {
   clientId: string;
   createSession: (clientId: string, name?: string | null) => Promise<void>;
+  className?: string;
 };
 
-export function AddSessionButton({ clientId, createSession }: Props) {
+export function AddSessionButton({ clientId, createSession, className = "" }: Props) {
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -26,7 +27,7 @@ export function AddSessionButton({ clientId, createSession }: Props) {
       <button
         type="button"
         onClick={() => setShowModal(true)}
-        className="btn-primary text-sm"
+        className={`btn-primary text-sm ${className}`.trim()}
       >
         Add Session
       </button>

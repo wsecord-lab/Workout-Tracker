@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && next build",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma migrate deploy && prisma db seed && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && prisma db seed && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
@@ -26,6 +26,7 @@
     "@auth/prisma-adapter": "^2.11.1",
     "@prisma/client": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "exceljs": "^4.4.0",
     "next": "^15.5.12",
     "next-auth": "^5.0.0-beta.30",
     "react": "^19.0.0",

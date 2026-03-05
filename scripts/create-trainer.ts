@@ -29,8 +29,12 @@ async function main() {
 
   const existing = await prisma.user.findUnique({ where: { email: emailNormalized } });
   if (existing) {
-    console.error(`User with email ${emailNormalized} already exists.`);
-    process.exit(1);
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { passwordHash, role: Role.TRAINER },
+    });
+    console.log(`Trainer password updated for: ${emailNormalized}`);
+    return;
   }
 
   const user = await prisma.user.create({
