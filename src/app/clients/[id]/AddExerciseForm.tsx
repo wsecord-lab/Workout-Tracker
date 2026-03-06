@@ -35,15 +35,30 @@ function ExerciseSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
+  const updatePosition = React.useCallback(() => {
+    if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     setPosition({
       top: rect.bottom,
       left: rect.left,
       width: Math.max(rect.width, 200),
     });
-  }, [open]);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
+
+  // Keep dropdown under the trigger when the page (main) scrolls — main is the scroll container, not window.
+  useEffect(() => {
+    if (!open) return;
+    const scrollContainer = document.querySelector("main");
+    if (!scrollContainer) return;
+    const handler = () => updatePosition();
+    scrollContainer.addEventListener("scroll", handler, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", handler);
+  }, [open, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,11 +154,14 @@ export function AddExerciseForm({
   catalog,
   trainerId,
   onExerciseAdded,
+  canAddNewExercise = true,
 }: {
   sessionId: string;
   catalog: CatalogItem[];
   trainerId?: string | null;
   onExerciseAdded?: (newExerciseId: string) => void;
+  /** When false, only the catalog dropdown is shown (e.g. clients cannot add new exercise names). */
+  canAddNewExercise?: boolean;
 }) {
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [newName, setNewName] = useState("");
@@ -232,42 +250,44 @@ export function AddExerciseForm({
           {isPending ? "Adding…" : "Add from catalog"}
         </button>
       </form>
-      <form
-        className="flex flex-col gap-1"
-        onSubmit={handleAddNew}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Or add new exercise name"
-            title={newName.length > 40 ? newName : undefined}
-            className={`input flex-1 min-w-0 max-w-full py-1.5 text-sm ${isOverMax ? "border-rose-500 focus:ring-rose-500" : ""}`}
-            disabled={isPending}
-            aria-invalid={isOverMax}
-            aria-describedby={isOverMax ? "new-exercise-length-error" : undefined}
-          />
-          <button
-            type="submit"
-            disabled={addNewDisabled}
-            title={isOverMax ? `Exercise name must be ≤ ${MAX_EXERCISE_NAME_LEN} characters` : !trimmedNewName ? "Enter an exercise name" : undefined}
-            className="rounded bg-secondary px-3 py-1.5 text-sm text-white outline-none hover:bg-secondary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 shrink-0"
-          >
-            {isPending ? "Adding…" : "Add new"}
-          </button>
-        </div>
-        {isOverMax && (
-          <p id="new-exercise-length-error" className="text-sm text-rose-600" role="alert">
-            Exercise name must be ≤ {MAX_EXERCISE_NAME_LEN} characters ({trimmedNewName.length} entered).
-          </p>
-        )}
-        {trimmedNewName.length > 0 && trimmedNewName.length >= Math.floor(MAX_EXERCISE_NAME_LEN * 0.8) && !isOverMax && (
-          <p className="text-xs text-muted">
-            {trimmedNewName.length}/{MAX_EXERCISE_NAME_LEN} characters
-          </p>
-        )}
-      </form>
+      {canAddNewExercise && (
+        <form
+          className="flex flex-col gap-1"
+          onSubmit={handleAddNew}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Or add new exercise name"
+              title={newName.length > 40 ? newName : undefined}
+              className={`input flex-1 min-w-0 max-w-full py-1.5 text-sm ${isOverMax ? "border-rose-500 focus:ring-rose-500" : ""}`}
+              disabled={isPending}
+              aria-invalid={isOverMax}
+              aria-describedby={isOverMax ? "new-exercise-length-error" : undefined}
+            />
+            <button
+              type="submit"
+              disabled={addNewDisabled}
+              title={isOverMax ? `Exercise name must be ≤ ${MAX_EXERCISE_NAME_LEN} characters` : !trimmedNewName ? "Enter an exercise name" : undefined}
+              className="rounded bg-secondary px-3 py-1.5 text-sm text-white outline-none hover:bg-secondary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 shrink-0"
+            >
+              {isPending ? "Adding…" : "Add new"}
+            </button>
+          </div>
+          {isOverMax && (
+            <p id="new-exercise-length-error" className="text-sm text-rose-600" role="alert">
+              Exercise name must be ≤ {MAX_EXERCISE_NAME_LEN} characters ({trimmedNewName.length} entered).
+            </p>
+          )}
+          {trimmedNewName.length > 0 && trimmedNewName.length >= Math.floor(MAX_EXERCISE_NAME_LEN * 0.8) && !isOverMax && (
+            <p className="text-xs text-muted">
+              {trimmedNewName.length}/{MAX_EXERCISE_NAME_LEN} characters
+            </p>
+          )}
+        </form>
+      )}
     </div>
   );
 }

@@ -31,11 +31,13 @@ export function SessionBlock({
   catalog,
   trainerId,
   showPreviousBest = false,
+  canAddNewExercise = true,
 }: {
   session: SessionWithExercises;
   catalog: CatalogItem[];
   trainerId?: string | null;
   showPreviousBest?: boolean;
+  canAddNewExercise?: boolean;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -420,6 +422,7 @@ export function SessionBlock({
             catalog={catalog}
             trainerId={trainerId}
             onExerciseAdded={handleExerciseAdded}
+            canAddNewExercise={canAddNewExercise}
           />
           <div className="pt-2 border-t border-[var(--border)]">
             <DeleteSessionButton

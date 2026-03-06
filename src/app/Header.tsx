@@ -15,7 +15,7 @@ export function Header() {
 
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 md:gap-4">
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 md:gap-4">
         <div className="flex flex-wrap items-center gap-2 md:gap-4">
           <Link
             href="/"

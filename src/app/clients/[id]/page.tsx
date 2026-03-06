@@ -128,6 +128,7 @@ export default async function ClientDetailPage({
                 catalog={catalog}
                 trainerId={client.trainerId}
                 showPreviousBest={!isClient}
+                canAddNewExercise={!isClient}
               />
             ))}
             <LoadMoreSessions

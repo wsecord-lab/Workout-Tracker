@@ -16,11 +16,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-background text-[var(--text)] antialiased">
+      <body className="min-h-[100dvh] h-[100dvh] flex flex-col bg-background text-[var(--text)] antialiased overflow-hidden">
         <Providers>
           <FocusScroll />
           <Header />
-          <main className="mx-auto max-w-4xl px-4 py-6">{children}</main>
+          {/* Main content is the single scroll container. min-h-0 lets this flex child shrink so overflow-y-auto scrolls. */}
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <div className="mx-auto max-w-4xl px-4 py-6 pb-24">{children}</div>
+          </main>
         </Providers>
       </body>
     </html>
