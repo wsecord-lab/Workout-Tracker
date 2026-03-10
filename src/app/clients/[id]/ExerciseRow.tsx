@@ -164,7 +164,7 @@ export function ExerciseRow({
           className="flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3 sm:flex-row sm:items-center sm:gap-2 sm:py-3"
         >
           <span
-            className={`inline-block shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
+            className={`inline-flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
             aria-hidden
           >
             ▶
