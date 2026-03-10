@@ -5,7 +5,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { requireTrainer } from "@/lib/authz";
 import {
-  normalizeEmail,
   hashPassword,
   verifyPassword,
   validateNewPassword,
@@ -16,9 +15,9 @@ import { Role } from "@prisma/client";
 const TRAINER = Role.TRAINER;
 const CLIENT = Role.CLIENT;
 
-/** Basic email format check (has @ and domain). */
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+/** Normalize username for lookups (trim + lowercase). */
+function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
 }
 
 export type CreateClientLoginResult =
@@ -46,14 +45,13 @@ export async function createClientLoginAndLink(
   }
 
   const errors: Record<string, string> = {};
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const username = normalizeUsername(String(formData.get("username") ?? ""));
   const tempPassword = String(formData.get("tempPassword") ?? "");
   const linkMode = formData.get("linkMode") as string | null;
   const existingClientId = formData.get("existingClientId") as string | null;
   const newClientName = formData.get("newClientName") as string | null;
 
-  if (!email) errors.email = "Email is required.";
-  else if (!isValidEmail(email)) errors.email = "Please enter a valid email address.";
+  if (!username) errors.username = "Username is required.";
   const pwError = validateNewPassword(tempPassword);
   if (pwError) errors.tempPassword = pwError;
 
@@ -71,17 +69,17 @@ export async function createClientLoginAndLink(
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
-  // Find or create User (CLIENT)
-  let user = await prisma.user.findUnique({ where: { email } });
+  // Find or create User (CLIENT) — username stored in email column
+  let user = await prisma.user.findUnique({ where: { email: username } });
   if (user) {
     if (user.role === TRAINER) {
-      return { ok: false, errors: { email: "Email already used by trainer account." } };
+      return { ok: false, errors: { username: "Username already used by trainer account." } };
     }
     // existing CLIENT user — will link below
   } else {
     user = await prisma.user.create({
       data: {
-        email,
+        email: username,
         passwordHash: await hashPassword(tempPassword),
         role: CLIENT,
       },

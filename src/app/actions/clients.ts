@@ -68,18 +68,18 @@ export async function deleteClient(id: string): Promise<void> {
   revalidatePath("/");
 }
 
-/** Trainer-only: link a client profile to a user account by email. */
+/** Trainer-only: link a client profile to a user account by username. */
 export async function linkUserToClient(
   clientId: string,
-  email: string
+  username: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireTrainer();
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) return { ok: false, error: "Client not found" };
-  const trimmed = email.trim().toLowerCase();
-  if (!trimmed) return { ok: false, error: "Email is required" };
+  const trimmed = username.trim().toLowerCase();
+  if (!trimmed) return { ok: false, error: "Username is required" };
   const user = await prisma.user.findUnique({ where: { email: trimmed } });
-  if (!user) return { ok: false, error: "User not found with that email" };
+  if (!user) return { ok: false, error: "User not found with that username" };
   if (user.role !== "CLIENT") return { ok: false, error: "User is not a client account" };
   await prisma.client.update({
     where: { id: clientId },

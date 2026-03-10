@@ -36,15 +36,15 @@ export function LoginForm({ errorFromUrl }: Props) {
         </p>
       )}
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm font-medium text-[var(--text)]">
-          Email
+        <label htmlFor="username" className="mb-1 block text-sm font-medium text-[var(--text)]">
+          Username
         </label>
         <input
-          id="email"
-          name="email"
-          type="email"
+          id="username"
+          name="username"
+          type="text"
           required
-          autoComplete="email"
+          autoComplete="username"
           className="input"
           disabled={submitting}
         />

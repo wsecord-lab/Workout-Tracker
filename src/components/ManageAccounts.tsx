@@ -20,8 +20,8 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
   const [linkMode, setLinkMode] = useState<"existing" | "new">("existing");
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
 
-  async function handleRemove(userId: string, email: string) {
-    if (!confirm(`Remove the client account for ${email}? The client profile will be unlinked and they will no longer be able to sign in with this email.`)) return;
+  async function handleRemove(userId: string, username: string) {
+    if (!confirm(`Remove the client account for ${username}? The client profile will be unlinked and they will no longer be able to sign in with this username.`)) return;
     setRemovingUserId(userId);
     const result = await removeClientAccount(userId);
     setRemovingUserId(null);
@@ -77,20 +77,20 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-[var(--text)]">
-              Email
+            <label htmlFor="username" className="block text-sm font-medium text-[var(--text)]">
+              Username
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
               className="input mt-1"
               disabled={submitting}
               required
             />
-            {errors.email && (
-              <p className="mt-1 text-sm text-error">{errors.email}</p>
+            {errors.username && (
+              <p className="mt-1 text-sm text-error">{errors.username}</p>
             )}
           </div>
 
@@ -302,7 +302,7 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
               <thead>
                 <tr>
                   <th className="table-header text-left">Client name</th>
-                  <th className="table-header text-left">Email</th>
+                  <th className="table-header text-left">Username</th>
                   <th className="table-header text-left">Status</th>
                   <th className="table-header text-right">Actions</th>
                 </tr>

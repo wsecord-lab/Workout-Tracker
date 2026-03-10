@@ -13,7 +13,17 @@ import type { TrainerCatalogItem } from "@/store/exercise-catalog";
 
 const MAX_EXERCISE_NAME_LEN = 120;
 
-/** Portal-rendered dropdown so the list is not clipped/mispositioned by ancestor overflow. */
+/** Case-insensitive filter: option name contains query. */
+function filterOptionsByQuery(
+  options: { id: string; name: string }[],
+  query: string
+): { id: string; name: string }[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return options;
+  return options.filter((o) => o.name.toLowerCase().includes(q));
+}
+
+/** Portal-rendered dropdown with search so the list is not clipped/mispositioned by ancestor overflow. */
 function ExerciseSelect({
   value,
   onChange,
@@ -32,7 +42,9 @@ function ExerciseSelect({
   "aria-label"?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
   const updatePosition = React.useCallback(() => {
@@ -47,7 +59,9 @@ function ExerciseSelect({
 
   useEffect(() => {
     if (!open) return;
+    setSearchQuery("");
     updatePosition();
+    searchInputRef.current?.focus();
   }, [open, updatePosition]);
 
   // Keep dropdown under the trigger when the page (main) scrolls — main is the scroll container, not window.
@@ -73,6 +87,7 @@ function ExerciseSelect({
   }, [open]);
 
   const selectedName = value ? options.find((o) => o.id === value)?.name : null;
+  const filteredOptions = filterOptionsByQuery(options, searchQuery);
 
   const dropdown =
     open &&
@@ -80,41 +95,61 @@ function ExerciseSelect({
     createPortal(
       <div
         id="exercise-select-list"
-        className="fixed z-[1100] rounded border border-border bg-surface py-1 shadow-lg max-h-[280px] overflow-y-auto"
+        className="fixed z-[1100] rounded border border-border bg-surface shadow-lg max-h-[320px] overflow-hidden flex flex-col"
         style={{
           top: position.top,
           left: position.left,
-          width: position.width,
+          width: Math.max(position.width, 260),
         }}
         role="listbox"
       >
-        <button
-          type="button"
-          role="option"
-          aria-selected={!value}
-          className="w-full px-3 py-2 text-left text-sm hover:bg-background/80 focus:bg-background/80 focus:outline-none text-muted"
-          onClick={() => {
-            onChange("");
-            setOpen(false);
-          }}
-        >
-          {placeholder}
-        </button>
-        {options.map((item) => (
+        <div className="p-2 border-b border-border sticky top-0 bg-surface">
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") e.preventDefault();
+            }}
+            placeholder="Search exercises…"
+            aria-label="Filter exercises"
+            className="input w-full py-1.5 text-sm"
+          />
+        </div>
+        <div className="overflow-y-auto py-1 max-h-[260px]">
           <button
-            key={item.id}
             type="button"
             role="option"
-            aria-selected={value === item.id}
-            className="w-full px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-background/80 focus:bg-background/80 focus:outline-none"
+            aria-selected={!value}
+            className="w-full px-3 py-2 text-left text-sm hover:bg-background/80 focus:bg-background/80 focus:outline-none text-muted"
             onClick={() => {
-              onChange(item.id);
+              onChange("");
               setOpen(false);
             }}
           >
-            {item.name}
+            {placeholder}
           </button>
-        ))}
+          {filteredOptions.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="option"
+              aria-selected={value === item.id}
+              className="w-full px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-background/80 focus:bg-background/80 focus:outline-none"
+              onClick={() => {
+                onChange(item.id);
+                setOpen(false);
+              }}
+            >
+              {item.name}
+            </button>
+          ))}
+          {filteredOptions.length === 0 && options.length > 0 && (
+            <p className="px-3 py-2 text-sm text-muted">No exercises match “{searchQuery}”</p>
+          )}
+        </div>
       </div>,
       document.body
     );

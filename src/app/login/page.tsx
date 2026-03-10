@@ -13,7 +13,7 @@ export default async function LoginPage({
   }
 
   const { error } = await searchParams;
-  const errorMessage = error === "CredentialsSignin" ? "Invalid email or password." : error;
+  const errorMessage = error === "CredentialsSignin" ? "Invalid username or password." : error;
 
   return (
     <div className="mx-auto max-w-sm">
