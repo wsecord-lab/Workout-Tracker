@@ -155,13 +155,13 @@ export function ExerciseRow({
     <div
       className={`relative overflow-visible rounded border border-border p-3 ${groupPresentation ? `border-l-4 ${groupPresentation.borderClass} ${groupPresentation.cardTintClass}` : "bg-background"}`}
     >
-      <div className="sticky top-0 z-[5] flex min-h-[44px] items-center justify-between gap-2 py-3 bg-background -mx-3 px-3 rounded overflow-visible">
+      <div className="sticky top-0 z-[5] flex flex-col gap-1.5 py-3 bg-background -mx-3 px-3 rounded overflow-visible sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:min-h-[44px]">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={isOpen}
           aria-controls={`exercise-${exercise.id}`}
-          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 py-3 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3"
+          className="flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3 sm:flex-row sm:items-center sm:gap-2 sm:py-3"
         >
           <span
             className={`inline-block shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
@@ -169,7 +169,7 @@ export function ExerciseRow({
           >
             ▶
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 w-full sm:w-auto">
             <div className="flex flex-wrap items-center gap-1.5">
               <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
               {groupPresentation && (
@@ -195,7 +195,7 @@ export function ExerciseRow({
               )}
             </div>
             {showPreviousBest && (
-              <p className="mt-0.5 text-xs text-muted break-words">
+              <p className="mt-0.5 text-xs text-muted break-words min-w-0 w-full">
                 {previousBestLoading && "Fetching previous session best…"}
                 {!previousBestLoading && previousBest?.found === true && (
                   <>Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} ({formatPreviousBestDate(previousBest.performedAt)})</>
@@ -207,12 +207,12 @@ export function ExerciseRow({
             )}
           </div>
           {!isOpen && (
-            <span className="shrink-0 text-sm text-muted truncate">
+            <span className="text-sm text-muted w-full truncate sm:shrink-0 sm:w-auto">
               {setsSummary(exercise.sets)}
             </span>
           )}
         </button>
-        <div className="flex items-center gap-1 shrink-0" ref={groupTriggerRef}>
+        <div className="flex items-center gap-1 shrink-0 self-stretch sm:self-auto justify-end sm:justify-start min-h-[44px] sm:min-h-0" ref={groupTriggerRef}>
           {showGroupControls && (
             <>
               <button
@@ -221,7 +221,7 @@ export function ExerciseRow({
                   e.stopPropagation();
                   setGroupMenuOpen((o) => !o);
                 }}
-                className="rounded px-2 py-1 text-xs text-muted hover:bg-muted/50 outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                className="tap-target rounded px-3 py-2 text-xs text-muted hover:bg-muted/50 outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 sm:px-2 sm:py-1"
                 aria-expanded={groupMenuOpen}
                 aria-haspopup="true"
               >
