@@ -306,7 +306,7 @@ export function ExerciseRow({
       >
         <div
           ref={contentRef}
-          className={`transition-opacity duration-200 ease-in-out md:duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`}
+          className={`pb-1 transition-opacity duration-200 ease-in-out md:duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`}
         >
           <ul className="mb-2 mt-2 space-y-1.5">
             {exercise.sets.map((s, i) => (
