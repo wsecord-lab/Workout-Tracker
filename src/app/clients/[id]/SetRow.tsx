@@ -5,12 +5,31 @@ import type { Set } from "@prisma/client";
 import { deleteSet, updateSet } from "@/app/actions/sets";
 import { formatWeight, toDisplay } from "@/lib/units";
 
+function PencilIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 2l2 2-6.5 6.5H2.5v-2L9 2z" />
+      <path d="M7.5 3.5l2 2" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 4h9" />
+      <path d="M4.5 4V3h4v1" />
+      <path d="M3 4l.5 7h6l.5-7" />
+    </svg>
+  );
+}
+
 const RPE_OPTIONS: (number | "")[] = [
   "",
   ...Array.from({ length: 19 }, (_, i) => 1 + i * 0.5),
 ];
 
-export function SetRow({ set }: { set: Set }) {
+export function SetRow({ set, setNumber }: { set: Set; setNumber?: number }) {
   const [editing, setEditing] = useState(false);
   const [weightLb, setWeightLb] = useState(String(toDisplay(set.weightKg, "weight")));
   const [reps, setReps] = useState(String(set.reps));
@@ -48,24 +67,46 @@ export function SetRow({ set }: { set: Set }) {
   const hasDetails = set.rpe != null || (set.notes != null && set.notes !== "");
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-1 text-sm">
-      <div className="min-w-0 flex-1">
-        {!editing && (
-          <>
-            <span>
+    <li className="text-sm">
+      {!editing && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-2">
+          {setNumber != null && (
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
+              {setNumber}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <span className="font-medium">
               {formatWeight(set.weightKg)} × {set.reps} reps
             </span>
             {hasDetails && (
-          <span className="ml-2 text-muted">
-            {set.rpe != null && `RPE ${set.rpe}`}
-            {set.rpe != null && set.notes?.trim() && " · "}
-            {set.notes?.trim() && `“${set.notes}”`}
-          </span>
+              <span className="ml-2 text-xs text-muted">
+                {set.rpe != null && `RPE ${set.rpe}`}
+                {set.rpe != null && set.notes?.trim() && " · "}
+                {set.notes?.trim() && `"${set.notes}"`}
+              </span>
             )}
-          </>
-        )}
-      </div>
-      {editing ? (
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="tap-target flex items-center justify-center rounded border border-border bg-surface p-1.5 text-muted transition-colors hover:border-primary hover:text-primary outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+            title="Edit set"
+          >
+            <PencilIcon />
+          </button>
+          <button
+            type="button"
+            onClick={() => startTransition(() => deleteSet(set.id))}
+            disabled={isPending}
+            className="tap-target flex items-center justify-center rounded border border-error/25 bg-surface p-1.5 text-error/50 transition-colors hover:border-error hover:text-error outline-none focus:ring-2 focus:ring-error/50 focus:ring-offset-1 disabled:opacity-50"
+            title="Remove set"
+          >
+            {isPending ? "…" : <TrashIcon />}
+          </button>
+        </div>
+      )}
+      {editing && (
         <div className="flex flex-col gap-2 w-full mt-1 sm:mt-0 sm:flex-row sm:flex-wrap sm:items-center sm:w-auto">
           <div className="flex flex-wrap items-center gap-2">
             <div>
@@ -164,24 +205,6 @@ export function SetRow({ set }: { set: Set }) {
               Cancel
             </button>
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="tap-target text-primary hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded disabled:opacity-50 text-sm py-2"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => startTransition(() => deleteSet(set.id))}
-            disabled={isPending}
-            className="tap-target text-error hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded disabled:opacity-50 text-sm py-2"
-          >
-            {isPending ? "…" : "Remove"}
-          </button>
         </div>
       )}
     </li>

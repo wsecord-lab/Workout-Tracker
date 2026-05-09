@@ -207,8 +207,8 @@ export function ExerciseRow({
             )}
           </div>
           {!isOpen && (
-            <span className="text-sm text-muted w-full truncate sm:shrink-0 sm:w-auto">
-              {setsSummary(exercise.sets)}
+            <span className={`text-sm w-full truncate sm:shrink-0 sm:w-auto ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}>
+              {exercise.sets.length === 0 ? "No sets yet" : setsSummary(exercise.sets)}
             </span>
           )}
         </button>
@@ -308,14 +308,15 @@ export function ExerciseRow({
           ref={contentRef}
           className={`transition-opacity duration-200 ease-in-out md:duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`}
         >
-          <ul className="mb-2 mt-2 space-y-1">
-            {exercise.sets.map((s) => (
-              <SetRow key={s.id} set={s} />
+          <ul className="mb-2 mt-2 space-y-1.5">
+            {exercise.sets.map((s, i) => (
+              <SetRow key={s.id} set={s} setNumber={i + 1} />
             ))}
           </ul>
           <AddSetForm
             exerciseId={exercise.id}
             lastSet={exercise.sets.length > 0 ? exercise.sets[exercise.sets.length - 1] : null}
+            setCount={exercise.sets.length}
           />
         </div>
       </div>

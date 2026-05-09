@@ -88,6 +88,7 @@ export function SessionBlock({
 
   const dateStr = formatSessionDate(session.date);
   const exerciseCount = session.exercises.length;
+  const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
   const groupPresentation = useMemo(
     () =>
       computeGroupPresentation(
@@ -256,7 +257,7 @@ export function SessionBlock({
             </span>
           ) : null}
           <span className="text-muted shrink-0">
-            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
+            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}{totalSets > 0 ? ` · ${totalSets} set${totalSets !== 1 ? "s" : ""}` : ""}
           </span>
           <span
             className={`inline-block transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
@@ -379,16 +380,16 @@ export function SessionBlock({
                 <button
                   type="button"
                   onClick={expandAll}
-                  className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                  className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
                 >
-                  Expand all
+                  <span aria-hidden="true">⊞</span> Expand all
                 </button>
                 <button
                   type="button"
                   onClick={collapseAll}
-                  className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                  className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
                 >
-                  Collapse all
+                  <span aria-hidden="true">⊟</span> Collapse all
                 </button>
               </>
             )}
@@ -396,9 +397,9 @@ export function SessionBlock({
               <button
                 type="button"
                 onClick={() => setShowApplyModal(true)}
-                className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+                className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
               >
-                Apply template
+                <span aria-hidden="true">📋</span> Template
               </button>
             )}
           </div>
