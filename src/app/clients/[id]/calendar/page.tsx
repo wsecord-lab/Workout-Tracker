@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getClientSessionsInMonth } from "@/lib/db/workouts";
+import { getClientSessionsInMonth, getClientRestDaysInMonth } from "@/lib/db/workouts";
 import { requireUser, assertClientAccess } from "@/lib/authz";
+import { listExerciseCatalog } from "@/app/actions/exercises";
+import { listTrainerExercisesForClient } from "@/app/actions/trainer-exercises";
 import { LogoutButton } from "@/components/LogoutButton";
 import { CalendarClient } from "../CalendarClient";
 
@@ -17,12 +19,13 @@ export default async function ClientCalendarPage({
   const user = await requireUser();
   await assertClientAccess(id);
   const isClient = user.role === "CLIENT";
+  const isTrainer = user.role === "TRAINER";
 
   const { year: yearParam, month: monthParam } = await searchParams;
 
   const client = await prisma.client.findUnique({
     where: { id },
-    select: { id: true, name: true },
+    select: { id: true, name: true, trainerId: true },
   });
   if (!client) notFound();
 
@@ -36,27 +39,15 @@ export default async function ClientCalendarPage({
     12
   );
 
-  const sessionsRaw = await getClientSessionsInMonth({ clientId: id, year, month });
-  const sessions = sessionsRaw.map((s) => ({
-    id: String(s.id),
-    name: s.name != null ? String(s.name) : null,
-    date: new Date(s.date).toISOString(),
-    clientId: String(s.clientId),
-    exercises: (s.exercises ?? []).map((e) => ({
-      id: String(e.id),
-      name: String(e.name ?? ""),
-      sessionId: String(e.sessionId),
-      catalogExerciseId: e.catalogExerciseId != null ? String(e.catalogExerciseId) : null,
-      sets: (e.sets ?? []).map((set) => ({
-        id: String(set.id),
-        weightKg: Number(set.weightKg) || 0,
-        reps: Number(set.reps) || 0,
-        rpe: set.rpe != null ? Number(set.rpe) : null,
-        notes: set.notes != null ? String(set.notes) : null,
-        exerciseId: String(set.exerciseId),
-      })),
-    })),
-  }));
+  const [sessions, restDays, catalog] = await Promise.all([
+    getClientSessionsInMonth({ clientId: id, year, month }),
+    getClientRestDaysInMonth({ clientId: id, year, month }),
+    isTrainer
+      ? client.trainerId
+        ? listTrainerExercisesForClient(client.trainerId)
+        : listExerciseCatalog()
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
 
   return (
     <div>
@@ -78,10 +69,13 @@ export default async function ClientCalendarPage({
       </div>
       <CalendarClient
         clientId={id}
-        clientName={client.name}
         year={year}
         month={month}
         sessions={sessions}
+        restDays={restDays}
+        isTrainer={isTrainer}
+        catalog={catalog}
+        trainerId={client.trainerId}
       />
     </div>
   );

@@ -82,9 +82,22 @@ model Client {
   sessions      WorkoutSession[]
   weightRecords ClientWeightRecord[]
   metricsCache  ClientMetricsCache[]
+  restDays      ClientRestDay[]
 
   @@index([userId])
   @@index([trainerId])
+}
+
+model ClientRestDay {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([clientId, date])
+  @@index([clientId, date])
 }
 
 model ClientMetricsCache {

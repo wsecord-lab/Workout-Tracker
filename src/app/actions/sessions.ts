@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
+import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
 import { sanitizeName, sanitizeNotes, SESSION_NAME_MAX_LENGTH, NOTES_MAX_LENGTH } from "@/lib/sanitize";
 
 /** Session name is sanitized (HTML stripped, max length enforced) before storage. */
@@ -20,7 +20,7 @@ export async function createSession(clientId: string, name?: string | null): Pro
     },
   });
   await invalidateClientMetricsCache(clientId);
-  revalidatePath(`/clients/${clientId}`);
+  revalidateClientWorkoutViews(clientId);
 }
 
 export type CreateSessionWithTemplateResult =
@@ -59,7 +59,7 @@ export async function createSessionWithTemplate(
       })),
     });
     await invalidateClientMetricsCache(clientId);
-    revalidatePath(`/clients/${clientId}`);
+    revalidateClientWorkoutViews(clientId);
     return { ok: true };
   }
   await createSession(clientId, name);
@@ -103,7 +103,7 @@ export async function applyTemplateToSession(
     })),
   });
   await invalidateClientMetricsCache(session.clientId);
-  revalidatePath(`/clients/${session.clientId}`);
+  revalidateClientWorkoutViews(session.clientId);
   return { ok: true };
 }
 
@@ -119,7 +119,7 @@ export async function updateSessionName(sessionId: string, clientId: string, nam
     data: { name: sanitized },
   });
   await invalidateClientMetricsCache(clientId);
-  revalidatePath(`/clients/${clientId}`);
+  revalidateClientWorkoutViews(clientId);
 }
 
 /** Session notes: sanitized (HTML stripped, max length) before storage. */
@@ -134,7 +134,7 @@ export async function updateSessionNotes(
     where: { id: sessionId },
     data: { notes: sanitized },
   });
-  revalidatePath(`/clients/${clientId}`);
+  revalidateClientWorkoutViews(clientId);
 }
 
 export async function deleteSession(sessionId: string, clientId: string): Promise<void> {
@@ -143,5 +143,5 @@ export async function deleteSession(sessionId: string, clientId: string): Promis
     where: { id: sessionId },
   });
   await invalidateClientMetricsCache(clientId);
-  revalidatePath(`/clients/${clientId}`);
+  revalidateClientWorkoutViews(clientId);
 }

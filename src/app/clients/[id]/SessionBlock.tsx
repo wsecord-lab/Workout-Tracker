@@ -32,15 +32,18 @@ export function SessionBlock({
   trainerId,
   showPreviousBest = false,
   canAddNewExercise = true,
+  defaultExpanded = false,
 }: {
   session: SessionWithExercises;
   catalog: CatalogItem[];
   trainerId?: string | null;
   showPreviousBest?: boolean;
   canAddNewExercise?: boolean;
+  /** When true (e.g. calendar sidebar), exercises are visible without an extra expand tap. */
+  defaultExpanded?: boolean;
 }) {
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(session.name ?? "");
   const [editingNotes, setEditingNotes] = useState(false);

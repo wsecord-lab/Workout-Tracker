@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionAccessForApi } from "@/lib/authz";
-import { revalidatePath } from "next/cache";
+import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
 
 /**
  * POST /api/sessions/:sessionId/groups/:groupId/assign
@@ -46,6 +46,6 @@ export async function POST(
     where: { id: { in: validIds } },
     data: { groupId },
   });
-  revalidatePath(`/clients/${access.clientId}`);
+  revalidateClientWorkoutViews(access.clientId);
   return NextResponse.json({ ok: true });
 }

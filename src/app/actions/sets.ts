@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
+import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
 import { validateSet, validateSetDetails, validateSetUpdate, validateSetsBulk } from "@/lib/validations";
 
 export type SetActionResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -39,7 +39,7 @@ export async function createSet(
     },
   });
   await invalidateClientMetricsCache(exercise.session.clientId);
-  revalidatePath(`/clients/${exercise.session.clientId}`);
+  revalidateClientWorkoutViews(exercise.session.clientId);
   return { ok: true };
 }
 
@@ -68,7 +68,7 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
     },
   });
   await invalidateClientMetricsCache(set.exercise.session.clientId);
-  revalidatePath(`/clients/${set.exercise.session.clientId}`);
+  revalidateClientWorkoutViews(set.exercise.session.clientId);
   return { ok: true };
 }
 
@@ -93,7 +93,7 @@ export async function updateSetDetails(
     data: { rpe: result.data.rpe, notes: result.data.notes },
   });
   await invalidateClientMetricsCache(set.exercise.session.clientId);
-  revalidatePath(`/clients/${set.exercise.session.clientId}`);
+  revalidateClientWorkoutViews(set.exercise.session.clientId);
   return { ok: true };
 }
 
@@ -128,7 +128,7 @@ export async function createSetsBulk(formData: FormData): Promise<CreateSetsBulk
     )
   );
   await invalidateClientMetricsCache(exercise.session.clientId);
-  revalidatePath(`/clients/${exercise.session.clientId}`);
+  revalidateClientWorkoutViews(exercise.session.clientId);
   return { ok: true };
 }
 
@@ -141,5 +141,5 @@ export async function deleteSet(setId: string): Promise<void> {
   await assertClientAccess(set.exercise.session.clientId);
   await prisma.set.delete({ where: { id: setId } });
   await invalidateClientMetricsCache(set.exercise.session.clientId);
-  revalidatePath(`/clients/${set.exercise.session.clientId}`);
+  revalidateClientWorkoutViews(set.exercise.session.clientId);
 }

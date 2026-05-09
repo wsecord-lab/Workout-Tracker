@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
+import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
 import { sanitizeName, EXERCISE_NAME_MAX_LENGTH } from "@/lib/sanitize";
 
 export async function listExerciseCatalog(): Promise<{ id: string; name: string }[]> {
@@ -43,7 +43,7 @@ export async function createExercise(
       select: { id: true },
     });
     await invalidateClientMetricsCache(session.clientId);
-    revalidatePath(`/clients/${session.clientId}`);
+    revalidateClientWorkoutViews(session.clientId);
     return exercise.id;
   }
   const sanitizedName = sanitizeName(name, EXERCISE_NAME_MAX_LENGTH);
@@ -53,7 +53,7 @@ export async function createExercise(
     select: { id: true },
   });
   await invalidateClientMetricsCache(session.clientId);
-  revalidatePath(`/clients/${session.clientId}`);
+  revalidateClientWorkoutViews(session.clientId);
   return exercise.id;
 }
 
@@ -75,7 +75,7 @@ export async function deleteExercise(exerciseId: string): Promise<{ clientId: st
     data: { deletedAt: new Date() },
   });
   await invalidateClientMetricsCache(exercise.session.clientId);
-  revalidatePath(`/clients/${exercise.session.clientId}`);
+  revalidateClientWorkoutViews(exercise.session.clientId);
   return { clientId: exercise.session.clientId };
 }
 
@@ -92,7 +92,7 @@ export async function restoreExercise(exerciseId: string): Promise<{ clientId: s
     data: { deletedAt: null },
   });
   await invalidateClientMetricsCache(exercise.session.clientId);
-  revalidatePath(`/clients/${exercise.session.clientId}`);
+  revalidateClientWorkoutViews(exercise.session.clientId);
   return { clientId: exercise.session.clientId };
 }
 
@@ -106,5 +106,5 @@ export async function hardDeleteExercise(exerciseId: string): Promise<void> {
   await assertClientAccess(exercise.session.clientId);
   await prisma.exercise.delete({ where: { id: exerciseId } });
   await invalidateClientMetricsCache(exercise.session.clientId);
-  revalidatePath(`/clients/${exercise.session.clientId}`);
+  revalidateClientWorkoutViews(exercise.session.clientId);
 }

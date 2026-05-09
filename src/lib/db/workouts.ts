@@ -23,7 +23,7 @@ export async function getClientSessionsPaginated(params: {
       exercises: {
         where: { deletedAt: null },
         orderBy: { orderIndex: "asc" },
-        include: { sets: true },
+        include: { sets: { orderBy: { orderIndex: "asc" } } },
       },
     },
   });
@@ -47,7 +47,7 @@ export async function getClientSessionsForCharts(clientId: string) {
       exercises: {
         where: { deletedAt: null },
         orderBy: { orderIndex: "asc" },
-        include: { sets: true },
+        include: { sets: { orderBy: { orderIndex: "asc" } } },
       },
     },
   });
@@ -85,8 +85,41 @@ export async function getClientSessionsInMonth(params: {
       exercises: {
         where: { deletedAt: null },
         orderBy: { orderIndex: "asc" },
-        include: { sets: true },
+        include: { sets: { orderBy: { orderIndex: "asc" } } },
       },
     },
   });
+}
+
+/** Calendar date key YYYY-MM-DD in UTC (matches stored @db.Date values). */
+export function utcDateToCalendarKey(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Rest-day markers for a client within a calendar month (same window as sessions). */
+export async function getClientRestDaysInMonth(params: {
+  clientId: string;
+  year: number;
+  month: number;
+}) {
+  const monthStart = new Date(params.year, params.month - 1, 1);
+  const monthEnd = new Date(params.year, params.month, 1);
+
+  const rows = await prisma.clientRestDay.findMany({
+    where: {
+      clientId: params.clientId,
+      date: { gte: monthStart, lt: monthEnd },
+    },
+    orderBy: { date: "asc" },
+    select: { id: true, date: true, notes: true },
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    dateKey: utcDateToCalendarKey(r.date),
+    notes: r.notes != null ? String(r.notes) : null,
+  }));
 }
