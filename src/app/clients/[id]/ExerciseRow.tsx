@@ -161,20 +161,20 @@ export function ExerciseRow({
           onClick={onToggle}
           aria-expanded={isOpen}
           aria-controls={`exercise-${exercise.id}`}
-          className="flex min-h-[44px] min-w-0 flex-1 flex-col gap-1 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3 sm:flex-row sm:items-center sm:gap-2 sm:py-3"
+          className="-my-3 flex min-h-[44px] min-w-0 w-full flex-1 flex-row items-start gap-2 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 sm:py-3 rounded"
         >
           <span
-            className={`inline-flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
+            className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
             aria-hidden
           >
             ▶
           </span>
-          <div className="min-w-0 flex-1 w-full sm:w-auto">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h4 className="font-medium text-[var(--text)] truncate">{exercise.name}</h4>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <h4 className="min-w-0 font-medium text-[var(--text)] break-words">{exercise.name}</h4>
               {groupPresentation && (
                 <span
-                  className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium shrink-0 ${groupPresentation.chipClass}`}
+                  className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-xs font-medium ${groupPresentation.chipClass}`}
                 >
                   {groupPresentation.label}
                   {showGroupControls && (
@@ -195,25 +195,28 @@ export function ExerciseRow({
               )}
             </div>
             {showPreviousBest && (
-              <p className="mt-0.5 text-xs text-muted break-normal [overflow-wrap:anywhere] min-w-0 w-full max-w-full">
+              <p className="text-xs leading-snug text-muted break-words">
                 {previousBestLoading && "Fetching previous session best…"}
                 {!previousBestLoading && previousBest?.found === true && (
-                  <>Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} ({formatPreviousBestDate(previousBest.performedAt)})</>
+                  <>
+                    Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} (
+                    {formatPreviousBestDate(previousBest.performedAt)})
+                  </>
                 )}
                 {!previousBestLoading && previousBest && !previousBest.found && (
                   <>No previous history for this exercise</>
                 )}
               </p>
             )}
+            {!isOpen && (
+              <span
+                className={`block min-w-0 truncate text-sm ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}
+                title={exercise.sets.length === 0 ? undefined : setsSummary(exercise.sets)}
+              >
+                {exercise.sets.length === 0 ? "No sets yet" : setsSummary(exercise.sets)}
+              </span>
+            )}
           </div>
-          {!isOpen && (
-            <span
-              className={`block min-w-0 max-w-full shrink-0 truncate whitespace-nowrap text-sm sm:inline-block sm:max-w-[min(100%,12rem)] md:max-w-[min(100%,18rem)] ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}
-              title={exercise.sets.length === 0 ? undefined : setsSummary(exercise.sets)}
-            >
-              {exercise.sets.length === 0 ? "No sets yet" : setsSummary(exercise.sets)}
-            </span>
-          )}
         </button>
         <div className="flex items-center gap-1 shrink-0 self-stretch sm:self-auto justify-end sm:justify-start min-h-[44px] sm:min-h-0" ref={groupTriggerRef}>
           {showGroupControls && (
