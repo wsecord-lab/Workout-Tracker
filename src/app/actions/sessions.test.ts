@@ -67,4 +67,20 @@ describe("createSessionWithTemplate", () => {
       orderIndex: 1,
     });
   });
+
+  it("includes calendar date on session when calendarDateKey is provided", async () => {
+    const { createSessionWithTemplate } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+
+    const result = await createSessionWithTemplate("client-1", "Legs", "tpl-1", "2026-05-08");
+    expect(result.ok).toBe(true);
+
+    const createCall = (prisma.workoutSession.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(createCall.data.clientId).toBe("client-1");
+    expect(createCall.data.name).toBe("Legs");
+    expect(createCall.data.date).toBeInstanceOf(Date);
+    expect(createCall.data.date.getFullYear()).toBe(2026);
+    expect(createCall.data.date.getMonth()).toBe(4);
+    expect(createCall.data.date.getDate()).toBe(8);
+  });
 });

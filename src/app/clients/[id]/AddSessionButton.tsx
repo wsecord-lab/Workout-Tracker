@@ -10,7 +10,7 @@ const MODAL_PANEL_Z = 1001;
 
 type Props = {
   clientId: string;
-  createSession: (clientId: string, name?: string | null) => Promise<void>;
+  createSession: (clientId: string, name?: string | null, calendarDateKey?: string | null) => Promise<void>;
   className?: string;
 };
 

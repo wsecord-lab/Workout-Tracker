@@ -153,15 +153,15 @@ export function ExerciseRow({
 
   return (
     <div
-      className={`relative overflow-visible rounded border border-border p-3 ${groupPresentation ? `border-l-4 ${groupPresentation.borderClass} ${groupPresentation.cardTintClass}` : "bg-background"}`}
+      className={`relative min-w-0 overflow-x-hidden rounded border border-border p-3 ${groupPresentation ? `border-l-4 ${groupPresentation.borderClass} ${groupPresentation.cardTintClass}` : "bg-background"}`}
     >
-      <div className="sticky top-0 z-[5] flex flex-col gap-1.5 py-3 bg-background -mx-3 px-3 rounded overflow-visible sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:min-h-[44px]">
+      <div className="sticky top-0 z-[5] flex min-w-0 flex-col gap-1.5 overflow-x-hidden bg-background py-3 -mx-3 px-3 rounded sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:min-h-[44px]">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={isOpen}
           aria-controls={`exercise-${exercise.id}`}
-          className="flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3 sm:flex-row sm:items-center sm:gap-2 sm:py-3"
+          className="flex min-h-[44px] min-w-0 flex-1 flex-col gap-1 py-0 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded -my-3 sm:flex-row sm:items-center sm:gap-2 sm:py-3"
         >
           <span
             className={`inline-flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 ${isOpen ? "rotate-90" : "rotate-0"}`}
@@ -195,7 +195,7 @@ export function ExerciseRow({
               )}
             </div>
             {showPreviousBest && (
-              <p className="mt-0.5 text-xs text-muted break-words min-w-0 w-full">
+              <p className="mt-0.5 text-xs text-muted break-normal [overflow-wrap:anywhere] min-w-0 w-full max-w-full">
                 {previousBestLoading && "Fetching previous session best…"}
                 {!previousBestLoading && previousBest?.found === true && (
                   <>Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} ({formatPreviousBestDate(previousBest.performedAt)})</>
@@ -207,7 +207,10 @@ export function ExerciseRow({
             )}
           </div>
           {!isOpen && (
-            <span className={`text-sm w-full truncate sm:shrink-0 sm:w-auto ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}>
+            <span
+              className={`block min-w-0 max-w-full shrink-0 truncate whitespace-nowrap text-sm sm:inline-block sm:max-w-[min(100%,12rem)] md:max-w-[min(100%,18rem)] ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}
+              title={exercise.sets.length === 0 ? undefined : setsSummary(exercise.sets)}
+            >
               {exercise.sets.length === 0 ? "No sets yet" : setsSummary(exercise.sets)}
             </span>
           )}

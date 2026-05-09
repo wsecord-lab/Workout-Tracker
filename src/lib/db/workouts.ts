@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 const DEFAULT_TAKE = 20;
@@ -91,14 +92,6 @@ export async function getClientSessionsInMonth(params: {
   });
 }
 
-/** Calendar date key YYYY-MM-DD in UTC (matches stored @db.Date values). */
-export function utcDateToCalendarKey(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 /** Rest-day markers for a client within a calendar month (same window as sessions). */
 export async function getClientRestDaysInMonth(params: {
   clientId: string;
@@ -108,18 +101,23 @@ export async function getClientRestDaysInMonth(params: {
   const monthStart = new Date(params.year, params.month - 1, 1);
   const monthEnd = new Date(params.year, params.month, 1);
 
-  const rows = await prisma.clientRestDay.findMany({
-    where: {
-      clientId: params.clientId,
-      date: { gte: monthStart, lt: monthEnd },
-    },
-    orderBy: { date: "asc" },
-    select: { id: true, date: true, notes: true },
-  });
+  const rows = await prisma.$queryRaw<Array<{ id: string; date_key: string; notes: string | null }>>(
+    Prisma.sql`
+      SELECT
+        crd.id,
+        to_char(crd.date, 'YYYY-MM-DD') AS date_key,
+        crd.notes
+      FROM "ClientRestDay" crd
+      WHERE crd."clientId" = ${params.clientId}
+        AND crd.date >= ${monthStart}
+        AND crd.date < ${monthEnd}
+      ORDER BY crd.date ASC
+    `
+  );
 
   return rows.map((r) => ({
     id: r.id,
-    dateKey: utcDateToCalendarKey(r.date),
+    dateKey: r.date_key,
     notes: r.notes != null ? String(r.notes) : null,
   }));
 }

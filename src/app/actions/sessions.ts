@@ -4,19 +4,29 @@ import { prisma } from "@/lib/db";
 import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
 import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
+import { parseCalendarDateKeyToLocalNoon } from "@/lib/calendar-date";
 import { sanitizeName, sanitizeNotes, SESSION_NAME_MAX_LENGTH, NOTES_MAX_LENGTH } from "@/lib/sanitize";
 
 /** Session name is sanitized (HTML stripped, max length enforced) before storage. */
-export async function createSession(clientId: string, name?: string | null): Promise<void> {
+export async function createSession(
+  clientId: string,
+  name?: string | null,
+  calendarDateKey?: string | null
+): Promise<void> {
   await assertClientAccess(clientId);
   const sanitized =
     name != null && name.trim() !== ""
       ? sanitizeName(name, SESSION_NAME_MAX_LENGTH)
       : undefined;
+  let sessionDate: Date | undefined;
+  if (calendarDateKey != null && String(calendarDateKey).trim() !== "") {
+    sessionDate = parseCalendarDateKeyToLocalNoon(String(calendarDateKey).trim()) ?? undefined;
+  }
   await prisma.workoutSession.create({
     data: {
       clientId,
       name: sanitized || undefined,
+      ...(sessionDate ? { date: sessionDate } : {}),
     },
   });
   await invalidateClientMetricsCache(clientId);
@@ -31,9 +41,14 @@ export type CreateSessionWithTemplateResult =
 export async function createSessionWithTemplate(
   clientId: string,
   name?: string | null,
-  templateId?: string | null
+  templateId?: string | null,
+  calendarDateKey?: string | null
 ): Promise<CreateSessionWithTemplateResult> {
   await assertClientAccess(clientId);
+  let sessionDate: Date | undefined;
+  if (calendarDateKey != null && String(calendarDateKey).trim() !== "") {
+    sessionDate = parseCalendarDateKeyToLocalNoon(String(calendarDateKey).trim()) ?? undefined;
+  }
   if (templateId) {
     await requireTrainer();
     const template = await prisma.workoutTemplate.findUnique({
@@ -49,6 +64,7 @@ export async function createSessionWithTemplate(
       data: {
         clientId,
         name: sanitized || undefined,
+        ...(sessionDate ? { date: sessionDate } : {}),
       },
     });
     await prisma.exercise.createMany({
@@ -62,7 +78,7 @@ export async function createSessionWithTemplate(
     revalidateClientWorkoutViews(clientId);
     return { ok: true };
   }
-  await createSession(clientId, name);
+  await createSession(clientId, name, calendarDateKey);
   return { ok: true };
 }
 

@@ -236,34 +236,32 @@ export function SessionBlock({
   const notesTruncated = notesPreview && notesPreview.length > 60 ? notesPreview.slice(0, 60) + "…" : notesPreview;
 
   return (
-    <section className="card">
+    <section className="card min-w-0">
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center justify-between gap-2 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
+        className="flex w-full min-w-0 flex-col gap-2 text-left outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded sm:flex-row sm:items-start sm:justify-between sm:gap-3"
       >
         <div className="min-w-0 flex-1">
           {session.name ? (
-            <h3 className="text-lg font-semibold text-[var(--text)] truncate">{session.name}</h3>
+            <h3 className="text-base font-semibold text-[var(--text)] break-words sm:text-lg">{session.name}</h3>
           ) : null}
           <p className={`text-sm ${session.name ? "text-muted mt-0.5" : "font-semibold text-[var(--text)]"}`}>
             {dateStr}
           </p>
         </div>
-        <span className="flex items-center gap-2 text-sm shrink-0 ml-2 min-w-0">
+        <span className="flex min-w-0 flex-shrink-0 flex-row flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted sm:ml-2 sm:max-w-[min(100%,15rem)] sm:justify-end sm:text-sm">
           {notesTruncated ? (
-            <span
-              className="truncate max-w-[180px] sm:max-w-[240px] text-muted"
-              title={notesPreview}
-            >
+            <span className="max-w-full truncate text-left sm:text-right" title={notesPreview}>
               {notesTruncated}
             </span>
           ) : null}
-          <span className="text-muted shrink-0">
-            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}{totalSets > 0 ? ` · ${totalSets} set${totalSets !== 1 ? "s" : ""}` : ""}
+          <span className="shrink-0 whitespace-nowrap">
+            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
+            {totalSets > 0 ? ` · ${totalSets} set${totalSets !== 1 ? "s" : ""}` : ""}
           </span>
           <span
-            className={`inline-block transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
+            className={`inline-block shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
             aria-hidden
           >
             ▼
