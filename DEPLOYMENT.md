@@ -12,8 +12,12 @@
 
 1. Go to [console.neon.tech](https://console.neon.tech)
 2. Create a project
-3. Copy the **connection string** (pooled recommended for serverless)
-4. It looks like: `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require`
+3. Copy **both** connection strings from Neon (or use one twice if you do not use pooling):
+   - **Pooled** → use as `DATABASE_URL` (recommended for Next.js serverless).
+   - **Direct** (non-pooled) → use as `DIRECT_URL` for Prisma migrations.
+4. Example hosts look like `ep-xxx.pooler.neon.tech` (pooled) vs `ep-xxx.us-east-2.aws.neon.tech` (direct).
+
+If `DATABASE_URL` points at a pooler (PgBouncer), `prisma migrate deploy` can fail with **P1002** while waiting for a Postgres advisory lock. Setting `DIRECT_URL` to the direct connection fixes that.
 
 ---
 
@@ -24,9 +28,9 @@
 cd workout-tracker
 npm install
 
-# Create .env with your DATABASE_URL
+# Create .env with DATABASE_URL and DIRECT_URL (see .env.example)
 cp .env.example .env
-# Edit .env and paste your Neon DATABASE_URL
+# Edit .env: pooled Neon URL → DATABASE_URL; direct Neon URL → DIRECT_URL
 
 # Generate Prisma client
 npx prisma generate
@@ -63,7 +67,8 @@ git push origin main
    - **Build Command:** `npm run build` (default)
    - **Install Command:** `npm install` (default)
    - **Environment variables:**
-     - `DATABASE_URL` = your Neon connection string (paste from step 1)
+     - `DATABASE_URL` = Neon **pooled** connection string (runtime)
+     - `DIRECT_URL` = Neon **direct** connection string (migrations during build)
      - (optional) `ACCESS_TOKEN` for the access gate
 4. Click **Deploy**
 
@@ -71,22 +76,25 @@ git push origin main
 
 ## 5. Run migrations on production
 
-Migrations run automatically via the build command (`prisma migrate deploy && next build`).
+Migrations run automatically during the Vercel build (`npm run vercel-build`, which runs `prisma migrate deploy` before `next build`). Seed data is **not** applied on Vercel builds; run `npx prisma db seed` locally or against production when you need demo accounts.
 
-Or run manually after first deploy:
+Or run migrations manually:
 
 ```bash
-DATABASE_URL="your-production-url" npx prisma migrate deploy
+DATABASE_URL="your-pooled-url" DIRECT_URL="your-direct-url" npx prisma migrate deploy
 ```
 
 ---
 
 ## Environment variables for Vercel
 
-| Variable       | Required | Description                                      |
-|----------------|----------|--------------------------------------------------|
-| `DATABASE_URL` | Yes      | PostgreSQL connection string from Neon/Supabase  |
-| `ACCESS_TOKEN` | No       | Shared secret for access gate (see below)        |
+| Variable       | Required | Description                                                                 |
+|----------------|----------|-----------------------------------------------------------------------------|
+| `DATABASE_URL` | Yes      | PostgreSQL URL for the app (pooled Neon URL is OK).                         |
+| `DIRECT_URL`   | Yes\*    | Same DB over a **direct** (non-pooled) URL so migrations can take advisory locks. Use the same value as `DATABASE_URL` only when you are not behind PgBouncer. |
+| `ACCESS_TOKEN` | No       | Shared secret for access gate (see below)                                   |
+
+\*Required for Neon pooled setups; omitting it breaks `prisma migrate deploy` on Vercel with P1002.
 
 ---
 

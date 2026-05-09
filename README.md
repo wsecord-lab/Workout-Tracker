@@ -20,7 +20,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Verification checklist
 
 - [ ] `npm install`
-- [ ] `cp .env.example .env` and set `DATABASE_URL` (PostgreSQL connection string)
+- [ ] `cp .env.example .env` and set `DATABASE_URL` and `DIRECT_URL` (see `.env.example`; Neon needs pooled + direct URLs for migrations)
 - [ ] `npx prisma generate`
 - [ ] `npx prisma migrate deploy`
 - [ ] `npm run dev`

@@ -7,7 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "prisma migrate deploy && prisma db seed && next build",
-    "vercel-build": "prisma generate && prisma migrate deploy && prisma db seed && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
