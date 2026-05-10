@@ -2,19 +2,16 @@ import Link from "next/link";
 import {
   listUnlinkedClients,
   listClientAccounts,
-  listClientsBasic,
 } from "@/app/actions/accounts";
 import { ManageAccounts } from "@/components/ManageAccounts";
-import { ExportToExcelCard } from "@/components/ExportToExcelCard";
 import { requireTrainer } from "@/lib/authz";
 
 export default async function ManageAccountsPage() {
   await requireTrainer();
 
-  const [unlinkedClients, clientAccounts, clientsBasic] = await Promise.all([
+  const [unlinkedClients, clientAccounts] = await Promise.all([
     listUnlinkedClients(),
     listClientAccounts(),
-    listClientsBasic(),
   ]);
 
   return (
@@ -30,13 +27,10 @@ export default async function ManageAccountsPage() {
           Manage Client Accounts
         </h1>
       </div>
-      <div className="space-y-8">
-        <ManageAccounts
-          unlinkedClients={unlinkedClients}
-          clientAccounts={clientAccounts}
-        />
-        <ExportToExcelCard clients={clientsBasic} />
-      </div>
+      <ManageAccounts
+        unlinkedClients={unlinkedClients}
+        clientAccounts={clientAccounts}
+      />
     </div>
   );
 }

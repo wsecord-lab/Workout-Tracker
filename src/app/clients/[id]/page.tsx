@@ -12,7 +12,6 @@ import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
 import { LoadMoreSessions } from "@/app/clients/[id]/LoadMoreSessions";
-import { WhoopExportButton } from "@/app/clients/[id]/WhoopExportButton";
 
 export default async function ClientDetailPage({
   params,
@@ -110,7 +109,6 @@ export default async function ClientDetailPage({
           className="w-full md:w-auto"
         />
         <AddBiometricsButton clientId={id} className="w-full md:w-auto" />
-        <WhoopExportButton clientId={id} />
       </div>
       <div className="space-y-8">
         {sessions.length === 0 ? (
@@ -126,6 +124,7 @@ export default async function ClientDetailPage({
                 showPreviousBest={!isClient}
                 canAddNewExercise={!isClient}
                 isClient={isClient}
+                clientName={client.name}
               />
             ))}
             <LoadMoreSessions

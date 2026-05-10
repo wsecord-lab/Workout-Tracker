@@ -11,6 +11,7 @@ import { DeleteSessionButton } from "./DeleteSessionButton";
 import { ExerciseRow } from "./ExerciseRow";
 import { ActiveWorkoutMode } from "./ActiveWorkoutMode";
 import { WarmupDisplay, WarmupAssigner } from "./WarmupSection";
+import { WhoopExportButton } from "./WhoopExportButton";
 import { useRouter } from "next/navigation";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
@@ -41,6 +42,7 @@ export function SessionBlock({
   canAddNewExercise = true,
   defaultExpanded = false,
   isClient = false,
+  clientName = "",
 }: {
   session: SessionWithExercises;
   catalog: CatalogItem[];
@@ -50,6 +52,7 @@ export function SessionBlock({
   /** When true (e.g. calendar sidebar), exercises are visible without an extra expand tap. */
   defaultExpanded?: boolean;
   isClient?: boolean;
+  clientName?: string;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -422,6 +425,7 @@ export function SessionBlock({
                 <span aria-hidden="true">📋</span> Template
               </button>
             )}
+            <WhoopExportButton sessionId={session.id} clientName={clientName} />
           </div>
           {/* Warmup section */}
           {session.warmupBlock && (
