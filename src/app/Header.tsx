@@ -11,12 +11,19 @@ export function Header() {
   const { data: session, status } = useSession();
   const [templatesOpen, setTemplatesOpen] = useState(false);
 
-  const isTrainer = status === "authenticated" && (session?.user as { role?: string })?.role === "TRAINER";
+  const role = (session?.user as { role?: string })?.role;
+  const isTrainer = status === "authenticated" && role === "TRAINER";
+  const isClient = status === "authenticated" && role === "CLIENT";
+  const clientProfileId =
+    (session?.user as { clientProfileId?: string | null })?.clientProfileId ?? null;
+
+  const clientNavLinkClass =
+    "text-xs text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded md:text-sm whitespace-normal md:whitespace-nowrap";
 
   return (
     <>
       <header className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 md:gap-4">
-        <div className="flex flex-wrap items-center gap-2 md:gap-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 md:gap-x-4">
           <Link
             href="/"
             className="outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0"
@@ -30,11 +37,31 @@ export function Header() {
               className="h-10 w-auto"
             />
           </Link>
-          {isTrainer && (
-            <Link
-              href="/manage-account"
-              className="text-xs text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded md:text-sm whitespace-normal md:whitespace-nowrap"
+          {isClient && clientProfileId && (
+            <nav
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 md:gap-x-4"
+              aria-label="Client navigation"
             >
+              <Link href="/charts" className={clientNavLinkClass}>
+                View Charts
+              </Link>
+              <Link
+                href={`/clients/${clientProfileId}/calendar`}
+                className={clientNavLinkClass}
+              >
+                Calendar
+              </Link>
+              <Link
+                href={`/clients/${clientProfileId}/edit`}
+                className={clientNavLinkClass}
+              >
+                Manage Account
+              </Link>
+              <LogoutButton variant="link" />
+            </nav>
+          )}
+          {isTrainer && (
+            <Link href="/manage-account" className={clientNavLinkClass}>
               Manage My Account
             </Link>
           )}

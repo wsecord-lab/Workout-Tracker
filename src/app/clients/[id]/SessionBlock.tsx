@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
+import { useState, useTransition, useMemo } from "react";
 import type { WorkoutSession, Exercise, Set as PrismaSet } from "@prisma/client";
-import { updateSessionName, updateSessionNotes, applyTemplateToSession } from "@/app/actions/sessions";
-import { listTemplates } from "@/app/actions/templates";
+import { updateSessionName, updateSessionNotes } from "@/app/actions/sessions";
 import { computeGroupPresentation } from "@/lib/group-presentation";
 import { AddExerciseForm } from "./AddExerciseForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
@@ -62,24 +60,7 @@ export function SessionBlock({
   const [editNotesValue, setEditNotesValue] = useState(session.notes ?? "");
   const [openExerciseIds, setOpenExerciseIds] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
-  const [showApplyModal, setShowApplyModal] = useState(false);
-  const [applyTemplates, setApplyTemplates] = useState<{ id: string; name: string }[]>([]);
-  const [applyTemplateId, setApplyTemplateId] = useState("");
-  const [applyMode, setApplyMode] = useState<"replace" | "append">("replace");
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const [applyPending, setApplyPending] = useState(false);
   const [workoutActive, setWorkoutActive] = useState(false);
-
-  useEffect(() => {
-    if (!showApplyModal) return;
-    listTemplates(false).then((result) => {
-      if (result.ok) {
-        setApplyTemplates(result.templates.map((t) => ({ id: t.id, name: t.name })));
-      } else {
-        setApplyTemplates([]);
-      }
-    });
-  }, [showApplyModal]);
 
   function toggleExercise(id: string) {
     setOpenExerciseIds((prev) => {
@@ -136,114 +117,6 @@ export function SessionBlock({
       setEditingNotes(false);
     });
   }
-
-  async function handleApplyTemplate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!applyTemplateId.trim()) return;
-    setApplyError(null);
-    setApplyPending(true);
-    const result = await applyTemplateToSession(session.id, applyTemplateId, applyMode);
-    setApplyPending(false);
-    if (result.ok) {
-      setShowApplyModal(false);
-      setApplyTemplateId("");
-      setApplyMode("replace");
-      router.refresh();
-    } else {
-      setApplyError(result.error ?? "Failed to apply template");
-    }
-  }
-
-  const applyModal =
-    showApplyModal &&
-    typeof document !== "undefined" &&
-    createPortal(
-      <div
-        className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 z-[1001]"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="apply-template-title"
-        onClick={() => !applyPending && setShowApplyModal(false)}
-      >
-        <form
-          onSubmit={handleApplyTemplate}
-          className="card w-full max-w-sm space-y-4"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 id="apply-template-title" className="text-lg font-semibold text-[var(--text)]">
-            Apply template
-          </h3>
-          <p className="text-sm text-muted">
-            Add exercises from a template to this session. Replace removes current exercises; Append adds after them.
-          </p>
-          <div>
-            <label htmlFor="apply-template-select" className="block text-sm font-medium text-[var(--text)] mb-1">
-              Template
-            </label>
-            <select
-              id="apply-template-select"
-              value={applyTemplateId}
-              onChange={(e) => setApplyTemplateId(e.target.value)}
-              className="input w-full py-1.5 text-sm"
-              disabled={applyPending}
-            >
-              <option value="">Select…</option>
-              {applyTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <span className="block text-sm font-medium text-[var(--text)] mb-2">Mode</span>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="apply-mode"
-                checked={applyMode === "replace"}
-                onChange={() => setApplyMode("replace")}
-                disabled={applyPending}
-              />
-              Replace existing exercises
-            </label>
-            <label className="flex items-center gap-2 text-sm mt-1">
-              <input
-                type="radio"
-                name="apply-mode"
-                checked={applyMode === "append"}
-                onChange={() => setApplyMode("append")}
-                disabled={applyPending}
-              />
-              Append to existing
-            </label>
-          </div>
-          {applyError && (
-            <p className="text-sm text-error" role="alert">
-              {applyError}
-            </p>
-          )}
-          <div className="flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => setShowApplyModal(false)}
-              disabled={applyPending}
-              className="btn-secondary text-sm py-1.5"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={applyPending || !applyTemplateId}
-              className="btn-primary text-sm py-1.5"
-            >
-              {applyPending ? "Applying…" : "Apply"}
-            </button>
-          </div>
-        </form>
-      </div>,
-      document.body
-    );
 
   const notesPreview = session.notes?.trim();
   const notesTruncated = notesPreview && notesPreview.length > 60 ? notesPreview.slice(0, 60) + "…" : notesPreview;
@@ -416,15 +289,6 @@ export function SessionBlock({
                 </button>
               </>
             )}
-            {trainerId && (
-              <button
-                type="button"
-                onClick={() => setShowApplyModal(true)}
-                className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
-              >
-                <span aria-hidden="true">📋</span> Template
-              </button>
-            )}
             <WhoopExportButton sessionId={session.id} clientName={clientName} />
           </div>
           {/* Warmup section */}
@@ -472,7 +336,6 @@ export function SessionBlock({
           </div>
         </div>
       )}
-      {applyModal}
       {workoutActive && (
         <ActiveWorkoutMode
           exercises={session.exercises}

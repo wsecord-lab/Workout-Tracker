@@ -2,8 +2,6 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { createSessionWithTemplate } from "@/app/actions/sessions";
-import { listTemplates } from "@/app/actions/templates";
 
 const MODAL_BACKDROP_Z = 1000;
 const MODAL_PANEL_Z = 1001;
@@ -17,8 +15,6 @@ type Props = {
 export function AddSessionButton({ clientId, createSession, className = "" }: Props) {
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
-  const [templateId, setTemplateId] = useState<string>("");
-  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -31,36 +27,12 @@ export function AddSessionButton({ clientId, createSession, className = "" }: Pr
     };
   }, [showModal]);
 
-  useEffect(() => {
-    if (!showModal) return;
-    listTemplates(false).then((result) => {
-      if (result.ok) {
-        setTemplates(result.templates.map((t) => ({ id: t.id, name: t.name })));
-      } else {
-        setTemplates([]);
-      }
-    });
-  }, [showModal]);
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
     startTransition(async () => {
-      if (templateId.trim()) {
-        const result = await createSessionWithTemplate(
-          clientId,
-          name.trim() || null,
-          templateId
-        );
-        if (!result.ok) {
-          setSubmitError(result.error ?? "Failed to create session");
-          return;
-        }
-      } else {
-        await createSession(clientId, name.trim() || null);
-      }
+      await createSession(clientId, name.trim() || null);
       setName("");
-      setTemplateId("");
       setShowModal(false);
     });
   }
@@ -69,7 +41,6 @@ export function AddSessionButton({ clientId, createSession, className = "" }: Pr
     if (!isPending) {
       setShowModal(false);
       setName("");
-      setTemplateId("");
       setSubmitError(null);
     }
   }
@@ -106,28 +77,6 @@ export function AddSessionButton({ clientId, createSession, className = "" }: Pr
             disabled={isPending}
             autoFocus
           />
-        </div>
-        <div>
-          <label htmlFor="session-template" className="block text-sm font-medium text-[var(--text)] mb-1">
-            Start From Template
-          </label>
-          <select
-            id="session-template"
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-            className="input w-full py-1.5 text-sm"
-            disabled={isPending}
-          >
-            <option value="">No template</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-muted">
-            Adds exercises from the template in order. No sets are added.
-          </p>
         </div>
         {submitError && (
           <p className="text-sm text-error" role="alert">

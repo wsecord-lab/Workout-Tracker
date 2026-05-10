@@ -12,6 +12,7 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       role: Role;
+      clientProfileId?: string | null;
     };
   }
 }
@@ -42,12 +43,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!valid) return null;
 
+        let clientProfileId: string | null = null;
+        if (user.role === "CLIENT") {
+          const profile = await prisma.client.findFirst({
+            where: { userId: user.id },
+            select: { id: true },
+          });
+          clientProfileId = profile?.id ?? null;
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           image: user.image,
           role: user.role,
+          clientProfileId,
         };
       },
     }),
@@ -57,13 +68,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         (token as { role?: Role }).role = (user as { role?: Role }).role;
+        const u = user as { clientProfileId?: string | null };
+        if (u.clientProfileId !== undefined) {
+          token.clientProfileId = u.clientProfileId;
+        }
       }
       return token;
     },
-    session({ session, token }) {
+    async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
         (session.user as { role?: Role }).role = (token as { role?: Role }).role as Role;
+
+        let clientProfileId: string | null =
+          (token.clientProfileId as string | null | undefined) ?? null;
+        if (session.user.role === "CLIENT" && !clientProfileId) {
+          const profile = await prisma.client.findFirst({
+            where: { userId: session.user.id },
+            select: { id: true },
+          });
+          clientProfileId = profile?.id ?? null;
+        }
+        session.user.clientProfileId = clientProfileId;
       }
       return session;
     },

@@ -8,8 +8,7 @@ import type { getClientSessionsInMonth } from "@/lib/db/workouts";
 import type { CalendarSession } from "./SessionContentReadOnly";
 import { SessionContentReadOnly } from "./SessionContentReadOnly";
 import { SessionBlock } from "./SessionBlock";
-import { createSession, createSessionWithTemplate } from "@/app/actions/sessions";
-import { listTemplates } from "@/app/actions/templates";
+import { createSession } from "@/app/actions/sessions";
 import { markRestDay, clearRestDay } from "@/app/actions/rest-days";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -91,8 +90,6 @@ export function CalendarClient({
   const [restPending, startRestTransition] = useTransition();
   const [showAddSessionModal, setShowAddSessionModal] = useState(false);
   const [addSessionName, setAddSessionName] = useState("");
-  const [addSessionTemplateId, setAddSessionTemplateId] = useState("");
-  const [addTemplates, setAddTemplates] = useState<{ id: string; name: string }[]>([]);
   const [addSessionError, setAddSessionError] = useState<string | null>(null);
   const [addSessionPending, startAddSessionTransition] = useTransition();
   const sessions = Array.isArray(sessionsProp) ? sessionsProp : [];
@@ -123,17 +120,6 @@ export function CalendarClient({
       document.body.style.overflow = prev;
     };
   }, [showAddSessionModal]);
-
-  useEffect(() => {
-    if (!showAddSessionModal || !isTrainer) return;
-    listTemplates(false).then((result) => {
-      if (result.ok) {
-        setAddTemplates(result.templates.map((t) => ({ id: t.id, name: t.name })));
-      } else {
-        setAddTemplates([]);
-      }
-    });
-  }, [showAddSessionModal, isTrainer]);
 
   const { sessionsByDay, gridWeeks } = useMemo(() => {
     const byDay: Record<string, CalendarMonthSession[]> = {};
@@ -210,7 +196,6 @@ export function CalendarClient({
     if (!addSessionPending) {
       setShowAddSessionModal(false);
       setAddSessionName("");
-      setAddSessionTemplateId("");
       setAddSessionError(null);
     }
   }
@@ -221,23 +206,9 @@ export function CalendarClient({
     setAddSessionError(null);
     startAddSessionTransition(async () => {
       try {
-        if (addSessionTemplateId.trim()) {
-          const result = await createSessionWithTemplate(
-            clientId,
-            addSessionName.trim() || null,
-            addSessionTemplateId,
-            selectedDateKey
-          );
-          if (!result.ok) {
-            setAddSessionError(result.error ?? "Could not create session");
-            return;
-          }
-        } else {
-          await createSession(clientId, addSessionName.trim() || null, selectedDateKey);
-        }
+        await createSession(clientId, addSessionName.trim() || null, selectedDateKey);
         setShowAddSessionModal(false);
         setAddSessionName("");
-        setAddSessionTemplateId("");
         setAddSessionError(null);
         router.refresh();
       } catch {
@@ -289,28 +260,6 @@ export function CalendarClient({
               autoFocus
             />
           </div>
-          {isTrainer && (
-            <div>
-              <label htmlFor="calendar-session-template" className="mb-1 block text-sm font-medium text-[var(--text)]">
-                Start From Template
-              </label>
-              <select
-                id="calendar-session-template"
-                value={addSessionTemplateId}
-                onChange={(e) => setAddSessionTemplateId(e.target.value)}
-                className="input w-full py-1.5 text-sm"
-                disabled={addSessionPending}
-              >
-                <option value="">No template</option>
-                {addTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-muted">Adds exercises from the template. No sets are added.</p>
-            </div>
-          )}
           {addSessionError && (
             <p className="text-sm text-error" role="alert">
               {addSessionError}

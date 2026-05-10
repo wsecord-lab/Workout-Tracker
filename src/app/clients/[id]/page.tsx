@@ -7,7 +7,6 @@ import { createSession } from "@/app/actions/sessions";
 import { listExerciseCatalog } from "@/app/actions/exercises";
 import { listTrainerExercisesForClient } from "@/app/actions/trainer-exercises";
 import { requireUser, assertClientAccess } from "@/lib/authz";
-import { LogoutButton } from "@/components/LogoutButton";
 import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
@@ -53,47 +52,34 @@ export default async function ClientDetailPage({
 
   return (
     <div>
-      {/* Top nav bar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {!isClient && (
+      {!isClient && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <Link
             href="/"
             className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0 text-sm"
           >
             ← Clients
           </Link>
-        )}
-        <Link
-          href={isClient ? "/charts" : `/charts?clientId=${id}`}
-          className="btn-primary text-sm"
-        >
-          View Charts
-        </Link>
-        <Link
-          href={`/clients/${id}/calendar`}
-          className="btn-primary text-sm"
-        >
-          Calendar
-        </Link>
-        {!isClient ? (
+          <Link
+            href={`/charts?clientId=${id}`}
+            className="btn-primary text-sm"
+          >
+            View Charts
+          </Link>
+          <Link
+            href={`/clients/${id}/calendar`}
+            className="btn-primary text-sm"
+          >
+            Calendar
+          </Link>
           <Link
             href={`/clients/${id}/edit`}
             className="btn-primary text-sm"
           >
             Manage This Account
           </Link>
-        ) : (
-          <>
-            <Link
-              href={`/clients/${id}/edit`}
-              className="btn-primary text-sm"
-            >
-              Manage Account
-            </Link>
-            <LogoutButton variant="primary" className="text-sm" />
-          </>
-        )}
-      </div>
+        </div>
+      )}
       {/* Client name and bio */}
       <h1 className="mb-1 break-words text-2xl font-bold text-[var(--text)]">
         {client.name}
