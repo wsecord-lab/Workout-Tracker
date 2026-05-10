@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Set } from "@prisma/client";
-import { deleteSet, updateSet } from "@/app/actions/sets";
+import { deleteSet, updateSet, swapSetOrder } from "@/app/actions/sets";
 import { formatWeight, toDisplay } from "@/lib/units";
 
 function PencilIcon() {
@@ -24,12 +24,42 @@ function TrashIcon() {
   );
 }
 
+function ChevronUpIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 7.5l3.5-4 3.5 4" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 3.5l3.5 4 3.5-4" />
+    </svg>
+  );
+}
+
 const RPE_OPTIONS: (number | "")[] = [
   "",
   ...Array.from({ length: 19 }, (_, i) => 1 + i * 0.5),
 ];
 
-export function SetRow({ set, setNumber }: { set: Set; setNumber?: number }) {
+export function SetRow({
+  set,
+  setNumber,
+  isFirst = false,
+  isLast = false,
+  prevSetId,
+  nextSetId,
+}: {
+  set: Set;
+  setNumber?: number;
+  isFirst?: boolean;
+  isLast?: boolean;
+  prevSetId?: string;
+  nextSetId?: string;
+}) {
   const [editing, setEditing] = useState(false);
   const [weightLb, setWeightLb] = useState(String(toDisplay(set.weightKg, "weight")));
   const [reps, setReps] = useState(String(set.reps));
@@ -37,6 +67,7 @@ export function SetRow({ set, setNumber }: { set: Set; setNumber?: number }) {
   const [notes, setNotes] = useState(set.notes ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [isReordering, startReorder] = useTransition();
 
   function handleSave() {
     setErrors({});
@@ -64,19 +95,50 @@ export function SetRow({ set, setNumber }: { set: Set; setNumber?: number }) {
     setErrors({});
   }
 
+  function handleMoveUp() {
+    if (!prevSetId) return;
+    startReorder(async () => { await swapSetOrder(set.id, prevSetId); });
+  }
+
+  function handleMoveDown() {
+    if (!nextSetId) return;
+    startReorder(async () => { await swapSetOrder(set.id, nextSetId); });
+  }
+
   const hasDetails = set.rpe != null || (set.notes != null && set.notes !== "");
 
   return (
     <li className="text-sm">
       {!editing && (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-2">
+        <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-2">
+          {/* Reorder buttons */}
+          <div className="flex flex-col gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleMoveUp}
+              disabled={isFirst || isReordering || isPending}
+              className="flex h-4 w-5 items-center justify-center rounded text-muted hover:text-[var(--text)] disabled:opacity-20 outline-none focus:ring-1 focus:ring-primary"
+              title="Move up"
+            >
+              <ChevronUpIcon />
+            </button>
+            <button
+              type="button"
+              onClick={handleMoveDown}
+              disabled={isLast || isReordering || isPending}
+              className="flex h-4 w-5 items-center justify-center rounded text-muted hover:text-[var(--text)] disabled:opacity-20 outline-none focus:ring-1 focus:ring-primary"
+              title="Move down"
+            >
+              <ChevronDownIcon />
+            </button>
+          </div>
           {setNumber != null && (
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
               {setNumber}
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <span className="font-medium">
+            <span className={`font-medium ${isReordering ? "opacity-50" : ""}`}>
               {formatWeight(set.weightKg)} × {set.reps} reps
             </span>
             {hasDetails && (

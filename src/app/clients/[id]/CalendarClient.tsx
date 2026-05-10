@@ -276,7 +276,7 @@ export function CalendarClient({
           </p>
           <div>
             <label htmlFor="calendar-session-name" className="mb-1 block text-sm font-medium text-[var(--text)]">
-              Session name (optional)
+              Session Name
             </label>
             <input
               id="calendar-session-name"
@@ -292,7 +292,7 @@ export function CalendarClient({
           {isTrainer && (
             <div>
               <label htmlFor="calendar-session-template" className="mb-1 block text-sm font-medium text-[var(--text)]">
-                Start from template (optional)
+                Start From Template
               </label>
               <select
                 id="calendar-session-template"
@@ -490,11 +490,11 @@ export function CalendarClient({
                 <span aria-hidden className="inline-block shrink-0 transition-transform group-open:rotate-90">
                   ▸
                 </span>
-                <span>Optional: plan a rest day</span>
+                <span>Plan A Rest Day</span>
               </summary>
               <div className="mt-3 space-y-3">
                 <label className="mb-1 block text-xs text-muted" htmlFor="calendar-rest-notes">
-                  Note (optional)
+                  Note
                 </label>
                 <textarea
                   id="calendar-rest-notes"

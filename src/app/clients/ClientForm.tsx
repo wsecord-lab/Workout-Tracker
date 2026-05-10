@@ -95,7 +95,7 @@ export function ClientForm({ action, initial, clientId, successRedirect }: Props
       </div>
       <div>
         <label htmlFor="age" className="block text-sm font-medium text-[var(--text)]">
-          Age <span className="text-muted font-normal">(optional)</span>
+          Age
         </label>
         <input
           id="age"
@@ -113,7 +113,7 @@ export function ClientForm({ action, initial, clientId, successRedirect }: Props
       <div className="flex flex-col gap-4 md:flex-row md:gap-3">
         <div className="flex-1 min-w-0">
           <label htmlFor="heightFeet" className="block text-sm font-medium text-[var(--text)]">
-            Height <span className="text-muted font-normal">(optional)</span>
+            Height
           </label>
           <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
             <input
@@ -149,7 +149,7 @@ export function ClientForm({ action, initial, clientId, successRedirect }: Props
       {errors.heightIn && <p className="mt-1 text-sm text-error">{errors.heightIn}</p>}
       <div>
         <label htmlFor="bodyWeightLb" className="block text-sm font-medium text-[var(--text)]">
-          Body weight (lb) <span className="text-muted font-normal">(optional)</span>
+          Body Weight (lb)
         </label>
         <input
           id="bodyWeightLb"

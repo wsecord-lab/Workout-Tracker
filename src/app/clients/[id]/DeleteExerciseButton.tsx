@@ -147,7 +147,7 @@ export function DeleteExerciseButton({
         aria-expanded={modalOpen}
         aria-haspopup="dialog"
       >
-        Remove exercise
+        Remove Exercise
       </button>
       {modal}
     </>

@@ -90,11 +90,11 @@ export function AddSessionButton({ clientId, createSession, className = "" }: Pr
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="add-session-title" className="text-lg font-semibold text-[var(--text)]">
-          New session
+          New Session
         </h2>
         <div>
           <label htmlFor="session-name" className="block text-sm font-medium text-[var(--text)] mb-1">
-            Session name (optional)
+            Session Name
           </label>
           <input
             id="session-name"
@@ -109,7 +109,7 @@ export function AddSessionButton({ clientId, createSession, className = "" }: Pr
         </div>
         <div>
           <label htmlFor="session-template" className="block text-sm font-medium text-[var(--text)] mb-1">
-            Start from template (optional)
+            Start From Template
           </label>
           <select
             id="session-template"

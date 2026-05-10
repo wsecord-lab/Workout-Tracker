@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import type { Exercise, Set } from "@prisma/client";
 import { formatWeight } from "@/lib/units";
 import type { GroupPresentation } from "@/lib/group-presentation";
 import { usePreviousSessionBest } from "@/hooks/usePreviousSessionBest";
+import { updateExerciseNotes } from "@/app/actions/exercises";
 import { AddSetForm } from "./AddSetForm";
 import { DeleteExerciseButton } from "./DeleteExerciseButton";
 import { SetRow } from "./SetRow";
 
 type ExerciseWithSets = Exercise & { sets: Set[] };
-
-function setsSummary(sets: Set[]): string {
-  if (sets.length === 0) return "No sets";
-  return sets
-    .map((s) => `${formatWeight(s.weightKg)} × ${s.reps}`)
-    .join(", ");
-}
 
 function formatPreviousBestDate(performedAt: string): string {
   return new Date(performedAt).toLocaleDateString("en-US", {
@@ -38,6 +32,7 @@ export function ExerciseRow({
   uniqueGroups,
   sessionId,
   onGroupChange,
+  isClient = false,
 }: {
   exercise: ExerciseWithSets;
   isOpen: boolean;
@@ -49,11 +44,29 @@ export function ExerciseRow({
   uniqueGroups?: { groupId: string; label: string }[];
   sessionId?: string;
   onGroupChange?: () => void;
+  isClient?: boolean;
 }) {
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const groupTriggerRef = useRef<HTMLDivElement>(null);
   const groupPanelRef = useRef<HTMLDivElement>(null);
   const [groupMenuPosition, setGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  // Exercise notes
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(exercise.notes ?? "");
+  const [notesPending, startNotesPending] = useTransition();
+
+  function handleSaveNotes() {
+    const value = notesValue.trim() || null;
+    if (value === (exercise.notes ?? null)) {
+      setEditingNotes(false);
+      return;
+    }
+    startNotesPending(async () => {
+      await updateExerciseNotes(exercise.id, value);
+      setEditingNotes(false);
+    });
+  }
 
   useEffect(() => {
     if (!groupMenuOpen || !groupTriggerRef.current) return;
@@ -149,7 +162,11 @@ export function ExerciseRow({
     return () => observer.disconnect();
   }, [isOpen]);
 
-  const showGroupControls = !!sessionId && !!onGroupChange;
+  const showGroupControls = !!sessionId && !!onGroupChange && !isClient;
+
+  // Sets sorted ascending by orderIndex; displayed in reverse (newest first)
+  const setsAsc = [...exercise.sets].sort((a, b) => a.orderIndex - b.orderIndex);
+  const setsDisplayed = [...setsAsc].reverse();
 
   return (
     <div
@@ -209,12 +226,27 @@ export function ExerciseRow({
               </p>
             )}
             {!isOpen && (
-              <span
-                className={`block min-w-0 truncate text-sm ${exercise.sets.length === 0 ? "font-medium text-amber-500" : "text-muted"}`}
-                title={exercise.sets.length === 0 ? undefined : setsSummary(exercise.sets)}
-              >
-                {exercise.sets.length === 0 ? "No sets yet" : setsSummary(exercise.sets)}
-              </span>
+              exercise.sets.length === 0 ? (
+                <span className="block min-w-0 text-sm font-medium text-amber-500">
+                  No sets yet
+                </span>
+              ) : (
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {setsDisplayed.slice(0, 6).map((s) => (
+                    <span
+                      key={s.id}
+                      className="inline-flex items-center rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted"
+                    >
+                      {formatWeight(s.weightKg)}×{s.reps}
+                    </span>
+                  ))}
+                  {exercise.sets.length > 6 && (
+                    <span className="inline-flex items-center text-xs text-muted">
+                      +{exercise.sets.length - 6} more
+                    </span>
+                  )}
+                </div>
+              )
             )}
           </div>
         </button>
@@ -249,7 +281,7 @@ export function ExerciseRow({
                           onClick={() => createNewGroup()}
                           className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
                         >
-                          Create new group
+                          Create New Group
                         </button>
                         {uniqueGroups?.length ? (
                           <>
@@ -261,7 +293,7 @@ export function ExerciseRow({
                                 onClick={() => setGroup(g.groupId)}
                                 className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
                               >
-                                Add to {g.label}
+                                Add To {g.label}
                               </button>
                             ))}
                           </>
@@ -279,7 +311,7 @@ export function ExerciseRow({
                                   onClick={() => setGroup(g.groupId)}
                                   className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50"
                                 >
-                                  Move to {g.label}
+                                  Move To {g.label}
                                 </button>
                               ))
                           : null}
@@ -289,7 +321,7 @@ export function ExerciseRow({
                           onClick={() => setGroup(null)}
                           className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted/50 text-error"
                         >
-                          Remove from group
+                          Remove From Group
                         </button>
                       </>
                     )}
@@ -298,11 +330,13 @@ export function ExerciseRow({
                 )}
             </>
           )}
-          <DeleteExerciseButton
-            exerciseId={exercise.id}
-            exerciseName={exercise.name}
-            setsCount={exercise.sets.length}
-          />
+          {!isClient && (
+            <DeleteExerciseButton
+              exerciseId={exercise.id}
+              exerciseName={exercise.name}
+              setsCount={exercise.sets.length}
+            />
+          )}
         </div>
       </div>
       <div
@@ -314,14 +348,79 @@ export function ExerciseRow({
           ref={contentRef}
           className={`pb-1 transition-opacity duration-200 ease-in-out md:duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`}
         >
-          <ul className="mb-2 mt-2 space-y-1.5">
-            {exercise.sets.map((s, i) => (
-              <SetRow key={s.id} set={s} setNumber={i + 1} />
+          {/* Exercise notes */}
+          <div className="mb-2 mt-1">
+            {editingNotes ? (
+              <div className="flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  value={notesValue}
+                  onChange={(e) => setNotesValue(e.target.value)}
+                  placeholder="Exercise notes"
+                  className="input w-full py-1 text-sm"
+                  disabled={notesPending}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveNotes();
+                    if (e.key === "Escape") {
+                      setNotesValue(exercise.notes ?? "");
+                      setEditingNotes(false);
+                    }
+                  }}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveNotes}
+                    disabled={notesPending}
+                    className="btn-primary text-xs py-1 px-2"
+                  >
+                    {notesPending ? "…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotesValue(exercise.notes ?? "");
+                      setEditingNotes(false);
+                    }}
+                    disabled={notesPending}
+                    className="btn-secondary text-xs py-1 px-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-wrap">
+                {exercise.notes?.trim() && (
+                  <p className="text-xs text-muted italic">{exercise.notes}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setEditingNotes(true)}
+                  className="text-xs text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 rounded"
+                >
+                  {exercise.notes?.trim() ? "Edit Notes" : "Add Notes"}
+                </button>
+              </div>
+            )}
+          </div>
+          <ul className="mb-2 space-y-1.5">
+            {setsDisplayed.map((s, i) => (
+              <SetRow
+                key={s.id}
+                set={s}
+                setNumber={setsAsc.indexOf(s) + 1}
+                isFirst={i === 0}
+                isLast={i === setsDisplayed.length - 1}
+                prevSetId={i > 0 ? setsDisplayed[i - 1].id : undefined}
+                nextSetId={i < setsDisplayed.length - 1 ? setsDisplayed[i + 1].id : undefined}
+              />
             ))}
           </ul>
           <AddSetForm
             exerciseId={exercise.id}
-            lastSet={exercise.sets.length > 0 ? exercise.sets[exercise.sets.length - 1] : null}
+            lastSet={setsAsc.length > 0 ? setsAsc[setsAsc.length - 1] : null}
             setCount={exercise.sets.length}
           />
         </div>

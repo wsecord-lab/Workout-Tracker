@@ -96,6 +96,25 @@ export async function restoreExercise(exerciseId: string): Promise<{ clientId: s
   return { clientId: exercise.session.clientId };
 }
 
+/** Update an exercise's notes. */
+export async function updateExerciseNotes(
+  exerciseId: string,
+  notes: string | null
+): Promise<void> {
+  const exercise = await prisma.exercise.findUnique({
+    where: { id: exerciseId },
+    include: { session: true },
+  });
+  if (!exercise) return;
+  await assertClientAccess(exercise.session.clientId);
+  const sanitized = notes?.trim() || null;
+  await prisma.exercise.update({
+    where: { id: exerciseId },
+    data: { notes: sanitized },
+  });
+  revalidateClientWorkoutViews(exercise.session.clientId);
+}
+
 /** Permanently delete a soft-deleted exercise (after grace period or cleanup). */
 export async function hardDeleteExercise(exerciseId: string): Promise<void> {
   const exercise = await prisma.exercise.findUnique({

@@ -29,6 +29,7 @@ model User {
   clients       Client[]
   ownedClients  Client[]         @relation("ClientTrainer")
   trainerExerciseCatalog TrainerExerciseCatalogItem[]
+  warmupBlocks  WarmupBlock[]
   measurements  Measurement[]
   assignedAsTrainer TrainerClient[]  @relation("TrainerAssignments")
   assignedClients   TrainerClient[]  @relation("AssignedClients")
@@ -166,15 +167,42 @@ model AuditLog {
 
 // —— Workouts (existing app) ———
 model WorkoutSession {
-  id         String    @id @default(cuid())
-  name       String?
-  notes      String?   @db.Text
-  date       DateTime  @default(now())
-  clientId   String
-  client     Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  exercises  Exercise[]
+  id            String       @id @default(cuid())
+  name          String?
+  notes         String?      @db.Text
+  date          DateTime     @default(now())
+  clientId      String
+  client        Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  exercises     Exercise[]
+  warmupBlockId String?
+  warmupBlock   WarmupBlock? @relation(fields: [warmupBlockId], references: [id], onDelete: SetNull)
 
   @@index([clientId, date])
+  @@index([warmupBlockId])
+}
+
+model WarmupBlock {
+  id         String            @id @default(cuid())
+  trainerId  String
+  trainer    User              @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  name       String
+  isArchived Boolean           @default(false)
+  items      WarmupBlockItem[]
+  sessions   WorkoutSession[]
+  createdAt  DateTime          @default(now())
+
+  @@index([trainerId])
+}
+
+model WarmupBlockItem {
+  id         String      @id @default(cuid())
+  blockId    String
+  block      WarmupBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  name       String
+  details    String?
+  orderIndex Int         @default(0)
+
+  @@index([blockId])
 }
 
 model ExerciseCatalog {
@@ -202,6 +230,7 @@ model TrainerExerciseCatalogItem {
 model Exercise {
   id                  String           @id @default(cuid())
   name                String
+  notes               String?          @db.Text
   sessionId           String
   session             WorkoutSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   catalogExerciseId   String?

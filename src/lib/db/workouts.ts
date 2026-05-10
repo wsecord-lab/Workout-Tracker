@@ -26,6 +26,9 @@ export async function getClientSessionsPaginated(params: {
         orderBy: { orderIndex: "asc" },
         include: { sets: { orderBy: { orderIndex: "asc" } } },
       },
+      warmupBlock: {
+        include: { items: { orderBy: { orderIndex: "asc" } } },
+      },
     },
   });
 

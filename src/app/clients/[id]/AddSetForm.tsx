@@ -267,7 +267,7 @@ export function AddSetForm({
               placeholder="—"
               className="input w-full sm:w-16 min-h-[44px] sm:min-h-0 px-2 py-1 text-sm sm:hidden"
               disabled={isPending}
-              aria-label="RPE (optional)"
+              aria-label="RPE"
             />
             <select
               id={`rpe-${exerciseId}`}
@@ -291,7 +291,7 @@ export function AddSetForm({
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional"
+              placeholder=""
               className="input w-full min-h-[44px] sm:min-h-0 px-2 py-1 text-sm"
               disabled={isPending}
             />
@@ -328,14 +328,14 @@ export function AddSetForm({
           className="flex items-center gap-1 text-xs text-muted hover:text-[var(--text)] outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 rounded transition-colors"
         >
           <span aria-hidden>{showBulk ? "▲" : "▼"}</span>
-          {showBulk ? "Hide multiple sets" : "Add multiple sets at once"}
+          {showBulk ? "Hide Multiple Sets" : "Add Multiple Sets At Once"}
         </button>
 
         {showBulk && (
           <div className="mt-2 rounded border border-border bg-background/50 p-3 space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 text-sm">
               <label className="flex items-center gap-2 tap-target">
-                <span className="text-muted">Number of sets</span>
+                <span className="text-muted">Number Of Sets</span>
                 <select
                   value={numBulkSets}
                   onChange={(e) => setNumBulkSets(Number(e.target.value))}
@@ -356,7 +356,7 @@ export function AddSetForm({
                     className="h-5 w-5 rounded border-border text-primary focus:ring-primary shrink-0"
                     disabled={isPending}
                   />
-                  Copy values from previous set
+                  Copy Values From Previous Set
                 </label>
               )}
             </div>
@@ -401,7 +401,7 @@ export function AddSetForm({
 
             {lastSet && (
               <form onSubmit={handleRepeatLast} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 border-t border-border pt-3 text-sm">
-                <span className="text-muted">Repeat last set:</span>
+                <span className="text-muted">Repeat Last Set:</span>
                 <input
                   type="number"
                   min={1}

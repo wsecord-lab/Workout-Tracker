@@ -12,6 +12,7 @@ import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
 import { LoadMoreSessions } from "@/app/clients/[id]/LoadMoreSessions";
+import { WhoopExportButton } from "@/app/clients/[id]/WhoopExportButton";
 
 export default async function ClientDetailPage({
   params,
@@ -53,57 +54,51 @@ export default async function ClientDetailPage({
 
   return (
     <div>
-      {/* Client page header: stacked on mobile, horizontal on md+ */}
-      <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
-        <div className="flex min-w-0 flex-col gap-2 md:flex-row md:flex-1 md:items-center md:gap-4">
-          {!isClient && (
+      {/* Top nav bar */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {!isClient && (
+          <Link
+            href="/"
+            className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0 text-sm"
+          >
+            ← Clients
+          </Link>
+        )}
+        <Link
+          href={isClient ? "/charts" : `/charts?clientId=${id}`}
+          className="btn-primary text-sm"
+        >
+          View Charts
+        </Link>
+        <Link
+          href={`/clients/${id}/calendar`}
+          className="btn-primary text-sm"
+        >
+          Calendar
+        </Link>
+        {!isClient ? (
+          <Link
+            href={`/clients/${id}/edit`}
+            className="btn-primary text-sm"
+          >
+            Manage This Account
+          </Link>
+        ) : (
+          <>
             <Link
-              href="/"
-              className="text-secondary hover:text-secondary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded shrink-0 w-fit"
+              href={`/clients/${id}/edit`}
+              className="btn-primary text-sm"
             >
-              ← Clients
+              Manage Account
             </Link>
-          )}
-          <h1 className="break-words text-2xl font-bold text-[var(--text)] md:text-2xl md:shrink-0">
-            {client.name}
-          </h1>
-          <div className="flex flex-wrap items-center gap-2 md:gap-3">
-            <Link
-              href={isClient ? "/charts" : `/charts?clientId=${id}`}
-              className="btn-primary text-sm w-full md:w-auto"
-            >
-              View Charts
-            </Link>
-            <Link
-              href={`/clients/${id}/calendar`}
-              className="btn-primary text-sm w-full md:w-auto"
-            >
-              Calendar
-            </Link>
-            {!isClient && (
-              <Link
-                href={`/clients/${id}/edit`}
-                className="btn-primary text-sm w-full md:w-auto"
-              >
-                Manage This Account
-              </Link>
-            )}
-            {isClient && (
-              <>
-                <Link
-                  href={`/clients/${id}/edit`}
-                  className="btn-primary text-sm w-full md:w-auto"
-                >
-                  Manage Account
-                </Link>
-                <span className="w-full md:w-auto">
-                  <LogoutButton variant="primary" className="w-full md:w-auto" />
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+            <LogoutButton variant="primary" className="text-sm" />
+          </>
+        )}
       </div>
+      {/* Client name and bio */}
+      <h1 className="mb-1 break-words text-2xl font-bold text-[var(--text)]">
+        {client.name}
+      </h1>
       <p className="mb-6 text-sm text-muted">
         {client.age}y · {formatHeight(client.heightCm)} ·{" "}
         {formatWeight(client.bodyWeightKg)}
@@ -115,6 +110,7 @@ export default async function ClientDetailPage({
           className="w-full md:w-auto"
         />
         <AddBiometricsButton clientId={id} className="w-full md:w-auto" />
+        <WhoopExportButton clientId={id} />
       </div>
       <div className="space-y-8">
         {sessions.length === 0 ? (
@@ -129,6 +125,7 @@ export default async function ClientDetailPage({
                 trainerId={client.trainerId}
                 showPreviousBest={!isClient}
                 canAddNewExercise={!isClient}
+                isClient={isClient}
               />
             ))}
             <LoadMoreSessions

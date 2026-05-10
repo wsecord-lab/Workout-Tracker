@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workout Tracker — UI Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #e8e8e8; color: #1f1f1f; padding: 24px; }
+
+  /* --- Theme vars matching the app --- */
+  :root {
+    --primary: #6f8a28;
+    --primary-hover: #5f7722;
+    --secondary: #8d8d8d;
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --text: #1f1f1f;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --error: #d32f2f;
+    --radius: 8px;
+  }
+
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+  .col-wrap { display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 340px; max-width: 480px; }
+  .col-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; padding: 4px 10px; background: #ddd; border-radius: 4px; display: inline-block; }
+  .col-label.after { background: #c8d8a0; color: #3a5010; }
+
+  /* --- App chrome --- */
+  .phone { background: var(--bg); border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+
+  /* --- Shared --- */
+  .input { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 100%; background: white; color: var(--text); }
+  .input::placeholder { color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-secondary { background: #efefef; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost { background: none; color: var(--primary); font-size: 13px; cursor: pointer; border: none; text-decoration: underline; }
+  .btn-danger-ghost { background: none; color: var(--error); font-size: 13px; cursor: pointer; border: none; text-decoration: underline; }
+  .text-muted { color: var(--muted); font-size: 13px; }
+  .text-sm { font-size: 13px; }
+  .font-medium { font-weight: 500; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .divider-dashed { border: none; border-top: 1px dashed var(--border); margin: 12px 0; }
+  .badge { display: inline-flex; align-items: center; border: 1px solid; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; }
+
+  /* --- Annotation --- */
+  .annotation { font-size: 11px; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 3px 8px; margin-top: 6px; display: inline-block; }
+  .annotation-good { font-size: 11px; color: #166534; background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; padding: 3px 8px; margin-top: 6px; display: inline-block; }
+  .arrow { font-size: 11px; color: #b45309; margin-left: 6px; }
+
+  /* ===========================
+     BEFORE: Set list
+     =========================== */
+  .set-row-before { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .set-row-before:last-child { border-bottom: none; }
+
+  /* ===========================
+     AFTER: Set list
+     =========================== */
+  .set-row-after { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; background: #fafafa; border: 1px solid var(--border); margin-bottom: 6px; font-size: 13px; }
+  .set-num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .set-data { flex: 1; font-weight: 500; }
+  .set-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .icon-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: white; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; flex-shrink: 0; }
+  .icon-btn.danger { border-color: #fca5a5; color: var(--error); }
+
+  /* ===========================
+     BEFORE: Add set form
+     =========================== */
+  .add-form-before { margin-top: 10px; }
+  .add-form-before .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .add-form-before .row input { flex: 1; min-width: 60px; }
+  .bulk-section { border: 1px solid var(--border); border-radius: 6px; background: #fafafa; padding: 12px; margin-top: 10px; }
+  .bulk-grid { display: grid; grid-template-columns: 28px 1fr 1fr 1fr 2fr; gap: 6px; font-size: 12px; margin-top: 8px; }
+  .bulk-grid .header { font-weight: 600; color: var(--muted); font-size: 11px; }
+  .repeat-row { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); margin-top: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+
+  /* ===========================
+     AFTER: Add set form
+     =========================== */
+  .add-form-after { margin-top: 10px; }
+  .quick-add { background: #f0f4e8; border: 1px solid #c8d8a0; border-radius: 8px; padding: 12px; }
+  .quick-add-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5a7020; margin-bottom: 10px; }
+  .field-group { display: flex; gap: 8px; margin-bottom: 8px; }
+  .field-labeled { display: flex; flex-direction: column; gap: 3px; }
+  .field-labeled label { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .field-labeled input { width: 70px; text-align: center; }
+  .field-labeled input.wide { width: 100px; }
+  .quick-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .repeat-pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--primary); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--primary); font-weight: 500; cursor: pointer; background: white; }
+  .repeat-pill svg-icon { font-size: 12px; }
+  .more-link { font-size: 12px; color: var(--muted); cursor: pointer; border: none; background: none; text-decoration: underline; align-self: center; }
+
+  /* ===========================
+     Exercise row header
+     =========================== */
+  .exercise-header-before { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: white; border: 1px solid var(--border); border-radius: var(--radius); }
+  .exercise-header-after { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: white; border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: var(--radius); }
+  .ex-chevron { font-size: 11px; color: var(--muted); }
+  .ex-name { font-weight: 600; font-size: 14px; flex: 1; }
+  .ex-summary { font-size: 12px; color: var(--muted); }
+
+  /* ===========================
+     Workout mode toggle
+     =========================== */
+  .mode-toggle { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+  .toggle-track { width: 36px; height: 20px; background: var(--border); border-radius: 10px; position: relative; transition: background .2s; }
+  .toggle-track.on { background: var(--primary); }
+  .toggle-thumb { width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .toggle-track.on .toggle-thumb { left: 18px; }
+  .mode-label { font-weight: 500; }
+  .mode-sublabel { font-size: 11px; color: var(--muted); }
+
+  /* ===========================
+     Section header
+     =========================== */
+  .section-head { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .section-divider { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
+
+  .change-tag { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-left: 8px; vertical-align: middle; }
+  .change-tag.removed { background: #fee2e2; color: #b91c1c; }
+  .change-tag.improved { background: #dcfce7; color: #166534; }
+  .change-tag.new { background: #dbeafe; color: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<h1>Workout Tracker — UI Preview</h1>
+<p class="subtitle">Current state vs. proposed improvements. No code has been changed yet.</p>
+
+<!-- ================================================================
+     SECTION 1: Set logging (the most-used action during a workout)
+     ================================================================ -->
+<div class="section-divider">1 · Logging a set (most common action)</div>
+
+<div class="col-wrap">
+
+  <!-- BEFORE -->
+  <div class="col">
+    <div class="col-label">Current</div>
+    <div class="phone">
+      <div class="card">
+
+        <!-- Exercise header -->
+        <div class="exercise-header-before" style="margin-bottom:12px;">
+          <span class="ex-chevron">▶</span>
+          <span class="ex-name">Bench Press</span>
+          <span class="ex-summary">135 lb × 8, 145 lb × 6</span>
+          <span class="text-muted" style="margin-left:auto; font-size:12px;">Group</span>
+          <span style="font-size:12px; color:var(--error);">🗑</span>
+        </div>
+
+        <!-- Existing sets (no numbers) -->
+        <div class="set-row-before">
+          <span>135 lb × 8 reps</span>
+          <div style="display:flex;gap:10px;">
+            <button class="btn-ghost">Edit</button>
+            <button class="btn-danger-ghost">Remove</button>
+          </div>
+        </div>
+        <div class="set-row-before">
+          <span>145 lb × 6 reps <span class="text-muted">RPE 8</span></span>
+          <div style="display:flex;gap:10px;">
+            <button class="btn-ghost">Edit</button>
+            <button class="btn-danger-ghost">Remove</button>
+          </div>
+        </div>
+
+        <div class="annotation">No set numbers — hard to track progress at a glance</div><br>
+        <div class="annotation">"Edit" and "Remove" look the same — no visual weight difference</div>
+
+        <!-- Single add form -->
+        <div class="add-form-before">
+          <div class="row">
+            <input class="input" style="max-width:70px;" placeholder="lb" />
+            <input class="input" style="max-width:60px;" placeholder="reps" />
+            <input class="input" style="max-width:60px;" placeholder="RPE" />
+            <input class="input" placeholder="Notes" />
+          </div>
+          <button class="btn" style="background:#8d8d8d;color:white;width:100%;">Add set</button>
+        </div>
+
+        <div class="annotation">↑ Quick-add: no labels — placeholders vanish when typing</div>
+
+        <!-- Bulk section -->
+        <div class="bulk-section" style="margin-top:12px;">
+          <div class="section-head">Add Sets</div>
+          <div style="display:flex;gap:10px;align-items:center;font-size:12px;margin-bottom:8px;flex-wrap:wrap;">
+            <span class="text-muted">Number of sets</span>
+            <select class="input" style="width:60px;">
+              <option>1</option><option>2</option><option>3</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:5px;color:var(--muted);">
+              <input type="checkbox" /> Copy from previous
+            </label>
+          </div>
+          <div class="bulk-grid">
+            <div class="header">Set #</div>
+            <div class="header">Weight</div>
+            <div class="header">Reps</div>
+            <div class="header">RPE</div>
+            <div class="header">Notes</div>
+            <div style="color:var(--muted);">1</div>
+            <input class="input" placeholder="lb" />
+            <input class="input" placeholder="reps" />
+            <input class="input" placeholder="" />
+            <input class="input" placeholder="Notes" />
+          </div>
+          <button class="btn btn-primary" style="margin-top:8px;width:100%;">Add 1 Sets</button>
+
+          <div class="repeat-row">
+            <span>Repeat last set:</span>
+            <input class="input" style="width:50px;" value="3" />
+            <button class="btn btn-primary">+ Add 3 sets like last</button>
+          </div>
+        </div>
+
+        <div class="annotation">↑ Bulk grid + repeat form always visible — overwhelming when you just want to log one set</div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- AFTER -->
+  <div class="col">
+    <div class="col-label after">Proposed</div>
+    <div class="phone">
+      <div class="card">
+
+        <!-- Improved exercise header -->
+        <div class="exercise-header-after" style="margin-bottom:12px;">
+          <span class="ex-chevron" style="transform:rotate(90deg);display:inline-block;">▶</span>
+          <div style="flex:1;">
+            <div class="ex-name">Bench Press</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px;">Previous best: 155 lb × 5 · Mar 14</div>
+          </div>
+          <span class="text-muted" style="font-size:12px;margin-right:4px;">Group</span>
+          <span style="font-size:14px; color:var(--error); opacity:.7;">🗑</span>
+        </div>
+        <div class="annotation-good">Left accent stripe = exercise is in a group. Previous best shown inline.</div>
+
+        <!-- Existing sets WITH numbers -->
+        <div class="set-row-after">
+          <div class="set-num">1</div>
+          <div class="flex-1">
+            <div class="set-data">135 lb × 8 reps</div>
+          </div>
+          <button class="icon-btn" title="Edit">✏️</button>
+          <button class="icon-btn danger" title="Remove">🗑</button>
+        </div>
+        <div class="set-row-after">
+          <div class="set-num">2</div>
+          <div class="flex-1">
+            <div class="set-data">145 lb × 6 reps</div>
+            <div class="set-meta">RPE 8</div>
+          </div>
+          <button class="icon-btn" title="Edit">✏️</button>
+          <button class="icon-btn danger" title="Remove">🗑</button>
+        </div>
+
+        <div class="annotation-good">Set numbers at a glance. Icon buttons are visually distinct and easier to tap.</div>
+
+        <!-- Quick-add form (hero) -->
+        <div class="add-form-after" style="margin-top:10px;">
+          <div class="quick-add">
+            <div class="quick-add-title">Add Set 3</div>
+            <div class="field-group">
+              <div class="field-labeled">
+                <label>Weight (lb)</label>
+                <input class="input" value="145" style="width:80px;text-align:center;" />
+              </div>
+              <div class="field-labeled">
+                <label>Reps</label>
+                <input class="input" value="6" style="width:60px;text-align:center;" />
+              </div>
+              <div class="field-labeled">
+                <label>RPE</label>
+                <input class="input" placeholder="—" style="width:60px;text-align:center;" />
+              </div>
+            </div>
+            <div class="quick-actions">
+              <button class="btn btn-primary" style="flex:1;">Log Set 3</button>
+              <button class="repeat-pill">↻ Repeat last</button>
+            </div>
+          </div>
+
+          <div class="annotation-good">Fields have labels, values pre-filled from last set. "Repeat last" is a one-tap pill right here.</div>
+
+          <!-- Collapsed bulk section -->
+          <div style="margin-top:8px; text-align:center;">
+            <button class="more-link">+ Add multiple sets at once ›</button>
+          </div>
+          <div class="annotation-good">Bulk entry is hidden by default — one tap to reveal it when needed.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================================================================
+     SECTION 2: Session header / exercise list
+     ================================================================ -->
+<div class="section-divider" style="margin-top:32px;">2 · Session view</div>
+
+<div class="col-wrap">
+
+  <!-- BEFORE session -->
+  <div class="col">
+    <div class="col-label">Current</div>
+    <div class="phone">
+      <div class="card">
+        <!-- collapsed session -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">Push Day</div>
+            <div class="text-muted" style="font-size:12px;">Thursday · May 8, 2025</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);">
+            <span>3 exercises</span>
+            <span>▼</span>
+          </div>
+        </div>
+        <hr class="divider" />
+        <!-- expanded content -->
+        <div style="font-size:12px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn-ghost">Edit name</button>
+          <button class="btn-ghost">Expand all</button>
+          <button class="btn-ghost">Collapse all</button>
+          <button class="btn-ghost">Apply template</button>
+        </div>
+        <div class="annotation">Text links for all actions — no visual hierarchy, hard to scan while working out</div>
+
+        <!-- exercises as text links -->
+        <div style="margin-top:8px;">
+          <div class="exercise-header-before" style="margin-bottom:6px;">
+            <span class="ex-chevron">▶</span>
+            <span class="ex-name">Bench Press</span>
+            <span class="ex-summary">135×8, 145×6</span>
+            <span style="margin-left:auto;font-size:12px;color:var(--muted);">Group</span>
+          </div>
+          <div class="exercise-header-before" style="margin-bottom:6px;">
+            <span class="ex-chevron">▶</span>
+            <span class="ex-name">Overhead Press</span>
+            <span class="ex-summary">No sets</span>
+            <span style="margin-left:auto;font-size:12px;color:var(--muted);">Group</span>
+          </div>
+          <div class="exercise-header-before">
+            <span class="ex-chevron">▶</span>
+            <span class="ex-name">Tricep Pushdown</span>
+            <span class="ex-summary">50×12, 50×12, 50×12</span>
+            <span style="margin-left:auto;font-size:12px;color:var(--muted);">Group</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AFTER session -->
+  <div class="col">
+    <div class="col-label after">Proposed</div>
+    <div class="phone">
+      <div class="card">
+        <!-- collapsed session header, cleaner -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">Push Day</div>
+            <div class="text-muted" style="font-size:12px;">Thursday · May 8, 2025</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);">
+            <span>3 exercises · 8 sets</span>
+            <span>▼</span>
+          </div>
+        </div>
+        <div class="annotation-good">Set count added to collapsed summary</div>
+        <hr class="divider" />
+        <!-- toolbar with icon+label buttons -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px;">⊞ Expand all</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px;">⊟ Collapse all</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px;">📋 Template</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px;">✏️ Rename</button>
+        </div>
+        <div class="annotation-good">Button-style controls are easier to tap and scan during a workout</div>
+
+        <!-- exercises with visual status -->
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+          <div class="exercise-header-after">
+            <span class="ex-chevron" style="transform:rotate(90deg);display:inline-block;">▶</span>
+            <div style="flex:1;">
+              <div class="ex-name">Bench Press</div>
+              <div style="font-size:11px;color:var(--muted);">2 sets · 135×8, 145×6</div>
+            </div>
+            <span class="badge" style="border-color:#c8d8a0;color:#4a6a10;background:#f0f4e8;font-size:10px;">Super A</span>
+          </div>
+          <div class="exercise-header-after" style="border-left-color: #94a3b8;">
+            <span class="ex-chevron">▶</span>
+            <div style="flex:1;">
+              <div class="ex-name">Overhead Press</div>
+              <div style="font-size:11px;color:#f59e0b;font-weight:500;">No sets yet</div>
+            </div>
+          </div>
+          <div class="exercise-header-after" style="border-left-color:#6f8a28;">
+            <span class="ex-chevron">▶</span>
+            <div style="flex:1;">
+              <div class="ex-name">Tricep Pushdown</div>
+              <div style="font-size:11px;color:var(--muted);">3 sets · 50×12, 50×12, 50×12</div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation-good">"No sets yet" warning in amber. Set count visible without expanding.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================================================================
+     SECTION 3: Workout Mode concept
+     ================================================================ -->
+<div class="section-divider" style="margin-top:32px;">3 · "Workout Mode" concept</div>
+
+<p style="font-size:13px;color:var(--muted);max-width:700px;margin-bottom:16px;">
+  A toggle (per-session or in the header) that strips the UI down to only what you need <em>during</em> a live workout.
+  The trainer still has access to all features in the normal view. The question is: who benefits from this, and how much extra surface area does it add?
+</p>
+
+<div class="col-wrap">
+
+  <!-- Option A: mode toggle in header -->
+  <div class="col">
+    <div class="col-label">Option A — Toggle in session header</div>
+    <div class="phone">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">Push Day</div>
+            <div class="text-muted" style="font-size:12px;">Thursday · May 8, 2025</div>
+          </div>
+          <div class="mode-toggle">
+            <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+            <div>
+              <div class="mode-label">Workout Mode</div>
+              <div class="mode-sublabel">Simplified UI</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workout mode: stripped down exercise card -->
+        <div style="background:#f0f4e8;border:1px solid #c8d8a0;border-radius:8px;padding:12px;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Bench Press</div>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
+            <div class="set-row-after" style="background:white;">
+              <div class="set-num">1</div>
+              <div class="set-data">135 lb × 8</div>
+              <button class="icon-btn danger">🗑</button>
+            </div>
+            <div class="set-row-after" style="background:white;">
+              <div class="set-num">2</div>
+              <div class="set-data">145 lb × 6</div>
+              <button class="icon-btn danger">🗑</button>
+            </div>
+          </div>
+          <!-- Minimal add set -->
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <div class="field-labeled">
+              <label style="font-size:11px;font-weight:600;color:#5a7020;">lb</label>
+              <input class="input" value="145" style="width:70px;text-align:center;border-color:#c8d8a0;" />
+            </div>
+            <div class="field-labeled">
+              <label style="font-size:11px;font-weight:600;color:#5a7020;">reps</label>
+              <input class="input" value="6" style="width:60px;text-align:center;border-color:#c8d8a0;" />
+            </div>
+            <button class="btn btn-primary" style="flex:1;min-height:38px;">+ Log set</button>
+          </div>
+          <button style="margin-top:8px;width:100%;background:none;border:1px dashed #c8d8a0;color:#5a7020;border-radius:6px;padding:6px;font-size:12px;cursor:pointer;">↻ Repeat last (145 × 6)</button>
+        </div>
+
+        <div class="annotation-good">
+          Workout mode hides: RPE, Notes, Bulk grid, Group controls, Edit name, Template tools.<br>
+          Shows only: set list, quick weight/reps log, repeat last.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: trainer-only distinction -->
+  <div class="col">
+    <div class="col-label">Option B — No "mode", just polish the existing UI</div>
+    <div class="phone">
+      <div class="card">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6;">
+          Since <strong>the trainer is the primary user</strong>, a dedicated "workout mode" adds complexity:
+          a toggle to maintain, two UI states to test, and the risk of confusion about which mode you're in.
+        </div>
+        <div style="font-size:13px;line-height:1.6;margin-bottom:8px;">
+          Instead, the same goals can be achieved by:
+        </div>
+        <ul style="font-size:13px;line-height:1.9;padding-left:18px;color:var(--text);">
+          <li>Collapsing the bulk-add section by default</li>
+          <li>Promoting "Repeat last" as a pill button in the quick-add form</li>
+          <li>Adding set numbers + icon buttons to each set row</li>
+          <li>Pre-filling weight/reps from the previous set</li>
+        </ul>
+        <div style="margin-top:12px;font-size:13px;color:var(--muted);line-height:1.6;">
+          This gives 80% of the workout-mode benefit with none of the added surface area.
+          If a true mode toggle makes sense later, it can be added on top of an already-polished UI.
+        </div>
+        <div class="annotation-good" style="margin-top:10px;">Recommended starting point — lower risk, faster to ship.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:40px;padding:16px;background:white;border-radius:8px;border:1px solid var(--border);max-width:700px;">
+  <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Summary of proposed changes</div>
+  <table style="font-size:13px;width:100%;border-collapse:collapse;">
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:6px 8px;font-weight:600;">SetRow</td>
+      <td style="padding:6px 8px;">Add set numbers (1, 2, 3…) · Replace text links with icon buttons</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:6px 8px;font-weight:600;">AddSetForm</td>
+      <td style="padding:6px 8px;">Show field labels · Pre-fill from last set · Promote "Repeat last" · Collapse bulk grid by default</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:6px 8px;font-weight:600;">ExerciseRow</td>
+      <td style="padding:6px 8px;">Add set count to collapsed summary · Amber "No sets yet" indicator</td>
+    </tr>
+    <tr>
+      <td style="padding:6px 8px;font-weight:600;">SessionBlock</td>
+      <td style="padding:6px 8px;">Add total set count to header · Upgrade toolbar to button-style controls</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

@@ -61,6 +61,12 @@ export function Header() {
               Templates
             </button>
             <Link
+              href="/dashboard/warmups"
+              className="text-xs text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded md:text-sm whitespace-normal md:whitespace-nowrap"
+            >
+              Warmups
+            </Link>
+            <Link
               href="/dashboard/manage-accounts"
               className="text-xs text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded md:text-sm whitespace-normal md:whitespace-nowrap"
             >

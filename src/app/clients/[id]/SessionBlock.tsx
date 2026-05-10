@@ -9,10 +9,17 @@ import { computeGroupPresentation } from "@/lib/group-presentation";
 import { AddExerciseForm } from "./AddExerciseForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 import { ExerciseRow } from "./ExerciseRow";
+import { ActiveWorkoutMode } from "./ActiveWorkoutMode";
+import { WarmupDisplay, WarmupAssigner } from "./WarmupSection";
 import { useRouter } from "next/navigation";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
-type SessionWithExercises = WorkoutSession & { exercises: ExerciseWithSets[] };
+type WarmupItem = { id: string; name: string; details: string | null; orderIndex: number };
+type WarmupBlock = { id: string; name: string; items: WarmupItem[] };
+type SessionWithExercises = WorkoutSession & {
+  exercises: ExerciseWithSets[];
+  warmupBlock?: WarmupBlock | null;
+};
 type CatalogItem = { id: string; name: string };
 
 function formatSessionDate(date: Date): string {
@@ -33,6 +40,7 @@ export function SessionBlock({
   showPreviousBest = false,
   canAddNewExercise = true,
   defaultExpanded = false,
+  isClient = false,
 }: {
   session: SessionWithExercises;
   catalog: CatalogItem[];
@@ -41,6 +49,7 @@ export function SessionBlock({
   canAddNewExercise?: boolean;
   /** When true (e.g. calendar sidebar), exercises are visible without an extra expand tap. */
   defaultExpanded?: boolean;
+  isClient?: boolean;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -56,6 +65,7 @@ export function SessionBlock({
   const [applyMode, setApplyMode] = useState<"replace" | "append">("replace");
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
+  const [workoutActive, setWorkoutActive] = useState(false);
 
   useEffect(() => {
     if (!showApplyModal) return;
@@ -277,7 +287,7 @@ export function SessionBlock({
                   type="text"
                   value={editNameValue}
                   onChange={(e) => setEditNameValue(e.target.value)}
-                  placeholder="Session name"
+                  placeholder="Session Name"
                   className="input flex-1 py-1.5 text-sm"
                   disabled={isPending}
                   autoFocus
@@ -318,7 +328,7 @@ export function SessionBlock({
                 }}
                 className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
               >
-                Edit name
+                Edit Name
               </button>
             )}
           </div>
@@ -329,7 +339,7 @@ export function SessionBlock({
                 <textarea
                   value={editNotesValue}
                   onChange={(e) => setEditNotesValue(e.target.value)}
-                  placeholder="Session notes (optional)"
+                  placeholder="Session Notes"
                   rows={3}
                   className="input w-full py-1.5 text-sm resize-y min-h-[80px]"
                   disabled={isPending}
@@ -370,12 +380,21 @@ export function SessionBlock({
                   }}
                   className="text-sm text-primary hover:text-primary-hover hover:underline outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded"
                 >
-                  Edit notes
+                  Edit Notes
                 </button>
               </>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {isClient && (
+              <button
+                type="button"
+                onClick={() => setWorkoutActive(true)}
+                className="btn-primary text-sm py-1.5 px-4 gap-1.5 font-semibold"
+              >
+                ▶ Start Workout
+              </button>
+            )}
             {session.exercises.length > 0 && (
               <>
                 <button
@@ -383,14 +402,14 @@ export function SessionBlock({
                   onClick={expandAll}
                   className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
                 >
-                  <span aria-hidden="true">⊞</span> Expand all
+                  <span aria-hidden="true">⊞</span> Expand All
                 </button>
                 <button
                   type="button"
                   onClick={collapseAll}
                   className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
                 >
-                  <span aria-hidden="true">⊟</span> Collapse all
+                  <span aria-hidden="true">⊟</span> Collapse All
                 </button>
               </>
             )}
@@ -404,6 +423,18 @@ export function SessionBlock({
               </button>
             )}
           </div>
+          {/* Warmup section */}
+          {session.warmupBlock && (
+            <WarmupDisplay block={session.warmupBlock} />
+          )}
+          {!isClient && (
+            <WarmupAssigner
+              sessionId={session.id}
+              currentBlock={session.warmupBlock ?? null}
+              onChanged={() => router.refresh()}
+            />
+          )}
+
           {session.exercises.map((exercise) => (
             <ExerciseRow
               key={exercise.id}
@@ -417,6 +448,7 @@ export function SessionBlock({
               uniqueGroups={groupPresentation.uniqueGroups}
               sessionId={session.id}
               onGroupChange={() => router.refresh()}
+              isClient={isClient}
             />
           ))}
           <AddExerciseForm
@@ -437,6 +469,17 @@ export function SessionBlock({
         </div>
       )}
       {applyModal}
+      {workoutActive && (
+        <ActiveWorkoutMode
+          exercises={session.exercises}
+          sessionName={session.name ?? null}
+          sessionDate={session.date}
+          onClose={() => {
+            setWorkoutActive(false);
+            router.refresh();
+          }}
+        />
+      )}
     </section>
   );
 }

@@ -207,7 +207,7 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
               </div>
               <div>
                 <label htmlFor="age" className="block text-sm font-medium text-[var(--text)]">
-                  Age <span className="text-muted font-normal">(optional)</span>
+                  Age
                 </label>
                 <input
                   id="age"
@@ -224,7 +224,7 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--text)]">
-                  Height <span className="text-muted font-normal">(optional)</span>
+                  Height
                 </label>
                 <div className="mt-1 flex items-center gap-2">
                   <input
@@ -259,7 +259,7 @@ export function ManageAccounts({ unlinkedClients, clientAccounts }: Props) {
               </div>
               <div>
                 <label htmlFor="bodyWeightLb" className="block text-sm font-medium text-[var(--text)]">
-                  Body weight (lb) <span className="text-muted font-normal">(optional)</span>
+                  Body Weight (lb)
                 </label>
                 <input
                   id="bodyWeightLb"

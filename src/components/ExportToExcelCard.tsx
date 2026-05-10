@@ -25,6 +25,7 @@ export function ExportToExcelCard({ clients }: Props) {
   const [endDate, setEndDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isWhoopExporting, setIsWhoopExporting] = useState(false);
 
   if (!isTrainer) return null;
 
@@ -77,6 +78,35 @@ export function ExportToExcelCard({ clients }: Props) {
       setError("Export failed. Please try again.");
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleWhoopExport() {
+    setError(null);
+    const params = new URLSearchParams();
+    params.set("clientId", clientId);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+
+    const url = `/api/export/whoop?${params.toString()}`;
+    setIsWhoopExporting(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || data.error || "Whoop export failed.");
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `workout-log-${new Date().toISOString().slice(0, 10)}.txt`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      setError("Whoop export failed. Please try again.");
+    } finally {
+      setIsWhoopExporting(false);
     }
   }
 
@@ -197,15 +227,26 @@ export function ExportToExcelCard({ clients }: Props) {
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={() => void handleExport()}
-          disabled={isExporting}
-          className="btn-primary"
-          aria-busy={isExporting}
-        >
-          {isExporting ? "Preparing export…" : "Export to Excel"}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={isExporting || isWhoopExporting}
+            className="btn-primary"
+            aria-busy={isExporting}
+          >
+            {isExporting ? "Preparing export…" : "Export to Excel"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleWhoopExport()}
+            disabled={isExporting || isWhoopExporting}
+            className="btn-secondary"
+            aria-busy={isWhoopExporting}
+          >
+            {isWhoopExporting ? "Preparing…" : "Export for Whoop (.txt)"}
+          </button>
+        </div>
       </div>
     </section>
   );

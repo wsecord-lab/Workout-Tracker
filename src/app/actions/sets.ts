@@ -25,10 +25,13 @@ export async function createSet(
   if (!result.ok) return { ok: false, errors: result.errors };
   const exercise = await prisma.exercise.findUnique({
     where: { id: exerciseId },
-    include: { session: true },
+    include: { session: true, sets: { select: { orderIndex: true } } },
   });
   if (!exercise) return { ok: false, errors: { _: "Exercise not found" } };
   await assertClientAccess(exercise.session.clientId);
+  const maxOrderIndex = exercise.sets.length > 0
+    ? Math.max(...exercise.sets.map((s) => s.orderIndex))
+    : -1;
   await prisma.set.create({
     data: {
       exerciseId,
@@ -36,6 +39,7 @@ export async function createSet(
       reps: result.data.reps,
       rpe: result.data.rpe,
       notes: result.data.notes,
+      orderIndex: maxOrderIndex + 1,
     },
   });
   await invalidateClientMetricsCache(exercise.session.clientId);
@@ -129,6 +133,25 @@ export async function createSetsBulk(formData: FormData): Promise<CreateSetsBulk
   );
   await invalidateClientMetricsCache(exercise.session.clientId);
   revalidateClientWorkoutViews(exercise.session.clientId);
+  return { ok: true };
+}
+
+/** Swap the orderIndex of two adjacent sets (for reordering). */
+export async function swapSetOrder(
+  setId1: string,
+  setId2: string
+): Promise<{ ok: boolean }> {
+  const [set1, set2] = await Promise.all([
+    prisma.set.findUnique({ where: { id: setId1 }, include: { exercise: { include: { session: true } } } }),
+    prisma.set.findUnique({ where: { id: setId2 } }),
+  ]);
+  if (!set1 || !set2) return { ok: false };
+  await assertClientAccess(set1.exercise.session.clientId);
+  await prisma.$transaction([
+    prisma.set.update({ where: { id: setId1 }, data: { orderIndex: set2.orderIndex } }),
+    prisma.set.update({ where: { id: setId2 }, data: { orderIndex: set1.orderIndex } }),
+  ]);
+  revalidateClientWorkoutViews(set1.exercise.session.clientId);
   return { ok: true };
 }
 
