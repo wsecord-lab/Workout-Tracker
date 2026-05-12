@@ -153,6 +153,16 @@ export async function updateSessionNotes(
   revalidateClientWorkoutViews(clientId);
 }
 
+export async function markSessionFinished(sessionId: string, clientId: string): Promise<void> {
+  await assertClientAccess(clientId);
+  await prisma.workoutSession.update({
+    where: { id: sessionId },
+    data: { finishedAt: new Date() },
+  });
+  await invalidateClientMetricsCache(clientId);
+  revalidateClientWorkoutViews(clientId);
+}
+
 export async function deleteSession(sessionId: string, clientId: string): Promise<void> {
   await assertClientAccess(clientId);
   await prisma.workoutSession.delete({

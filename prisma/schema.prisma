@@ -176,6 +176,7 @@ model WorkoutSession {
   exercises     Exercise[]
   warmupBlockId String?
   warmupBlock   WarmupBlock? @relation(fields: [warmupBlockId], references: [id], onDelete: SetNull)
+  finishedAt    DateTime?
 
   @@index([clientId, date])
   @@index([warmupBlockId])

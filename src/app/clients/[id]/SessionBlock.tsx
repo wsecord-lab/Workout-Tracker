@@ -69,8 +69,17 @@ export function SessionBlock({
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
   const [workoutActive, setWorkoutActive] = useState(false);
+  const [isInProgress, setIsInProgress] = useState(false);
 
   const canUseTemplates = !isClient && !!trainerId;
+
+  // Check localStorage for in-progress state (client-side only)
+  useEffect(() => {
+    try {
+      const active = localStorage.getItem("workout_in_progress");
+      setIsInProgress(active === session.id);
+    } catch { /* ignore */ }
+  }, [session.id]);
 
   useEffect(() => {
     if (!showApplyModal || !canUseTemplates) return;
@@ -266,6 +275,15 @@ export function SessionBlock({
           </p>
         </div>
         <span className="flex min-w-0 flex-shrink-0 flex-row flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted sm:ml-2 sm:max-w-[min(100%,15rem)] sm:justify-end sm:text-sm">
+          {session.finishedAt ? (
+            <span className="shrink-0 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400 whitespace-nowrap">
+              ✓ Finished
+            </span>
+          ) : isInProgress ? (
+            <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-nowrap">
+              ● In Progress
+            </span>
+          ) : null}
           {notesTruncated ? (
             <span className="max-w-full truncate text-left sm:text-right" title={notesPreview}>
               {notesTruncated}
@@ -391,13 +409,13 @@ export function SessionBlock({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isClient && (
+            {isClient && !session.finishedAt && (
               <button
                 type="button"
-                onClick={() => setWorkoutActive(true)}
+                onClick={() => { setWorkoutActive(true); setIsInProgress(true); }}
                 className="btn-primary text-sm py-1.5 px-4 gap-1.5 font-semibold"
               >
-                ▶ Start Workout
+                {isInProgress ? "⏵ Resume Workout" : "▶ Start Workout"}
               </button>
             )}
             {session.exercises.length > 0 && (
@@ -480,10 +498,10 @@ export function SessionBlock({
           exercises={session.exercises}
           sessionName={session.name ?? null}
           sessionDate={session.date}
-          onClose={() => {
-            setWorkoutActive(false);
-            router.refresh();
-          }}
+          sessionId={session.id}
+          clientId={session.clientId}
+          onExit={() => { setWorkoutActive(false); router.refresh(); }}
+          onFinish={() => { setWorkoutActive(false); setIsInProgress(false); router.refresh(); }}
         />
       )}
     </section>
