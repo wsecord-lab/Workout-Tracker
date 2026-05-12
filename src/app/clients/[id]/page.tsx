@@ -93,6 +93,7 @@ export default async function ClientDetailPage({
           clientId={id}
           createSession={createSession}
           className="w-full md:w-auto"
+          canUseTemplates={!isClient}
         />
         <AddBiometricsButton clientId={id} className="w-full md:w-auto" />
       </div>
