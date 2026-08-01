@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { COMPLETED_SET_WHERE } from "@/lib/sets";
 
 const WHOOP_CLIENTS = ["Will Secord", "Jack Secord"];
 
@@ -37,6 +38,10 @@ export async function GET(request: NextRequest) {
           name: true,
           notes: true,
           sets: {
+            // Export what was actually performed; planned-but-skipped sets are
+            // targets, not results, so an all-planned session exports as
+            // "(No sets logged)".
+            where: COMPLETED_SET_WHERE,
             orderBy: { orderIndex: "asc" },
             select: { weightKg: true, reps: true, rpe: true, notes: true },
           },

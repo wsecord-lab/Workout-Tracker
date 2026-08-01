@@ -1,41 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { getClientAccessForApi } from "@/lib/authz";
 import { normalizeExerciseName } from "@/lib/normalize-exercise-name";
+import { COMPLETED_SET_WHERE } from "@/lib/sets";
 
 export type PreviousSessionBestResponse =
-  | { found: true; performedAt: string; weight: number; reps: number; rpe: number | null; notes: string | null }
+  | {
+      found: true;
+      performedAt: string;
+      weight: number;
+      reps: number;
+      rpe: number | null;
+      notes: string | null;
+      /** How many sets of this exercise were completed in that prior session. */
+      setCount: number;
+    }
   | { found: false };
 
 /**
  * GET /api/clients/:clientId/exercises/previous-session-best
  * Query: sessionDate (ISO), catalogExerciseId? (optional), exerciseName? (optional).
  * At least one of catalogExerciseId or exerciseName required.
- * Returns the best set from the most recent prior session where the client did this exercise.
- * RBAC: Only trainers who own the client may call; 403 otherwise.
+ * Returns set count + best set from the most recent prior session where the
+ * client actually performed this exercise.
+ * RBAC: the owning trainer, or the client themselves.
  */
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: clientId } = await context.params;
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const role = (session.user as { role?: string }).role;
-  if (role !== "TRAINER") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: { trainerId: true },
-  });
-  if (!client) {
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
-  }
-  if (client.trainerId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await getClientAccessForApi(clientId);
+  if (!access.allowed) {
+    const message =
+      access.status === 401 ? "Unauthorized" : access.status === 404 ? "Client not found" : "Forbidden";
+    return NextResponse.json({ error: message }, { status: access.status });
   }
 
   const sessionDateParam = request.nextUrl.searchParams.get("sessionDate");
@@ -83,22 +82,23 @@ export async function GET(
     include: {
       exercises: {
         where: { deletedAt: null },
-        include: { sets: true },
+        include: { sets: { where: COMPLETED_SET_WHERE } },
       },
     },
   });
 
-  const priorSession = priorSessions.find((s) => s.exercises.some(exerciseMatches));
+  // Require sets, not just a matching exercise. Matching on presence alone let a
+  // session that merely listed the exercise (now: one that only *planned* it)
+  // shadow the real history behind it and report "no previous history".
+  const priorSession = priorSessions.find((s) =>
+    s.exercises.filter(exerciseMatches).some((ex) => ex.sets.length > 0)
+  );
   if (!priorSession) {
     return NextResponse.json<PreviousSessionBestResponse>({ found: false });
   }
 
   const matchingExercises = priorSession.exercises.filter(exerciseMatches);
-
   const allSets = matchingExercises.flatMap((ex) => ex.sets);
-  if (allSets.length === 0) {
-    return NextResponse.json<PreviousSessionBestResponse>({ found: false });
-  }
 
   // Best: highest weight, tie-break reps, then createdAt
   const best = allSets.slice().sort((a, b) => {
@@ -107,12 +107,17 @@ export async function GET(
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   })[0];
 
-  return NextResponse.json<PreviousSessionBestResponse>({
-    found: true,
-    performedAt: priorSession.date.toISOString(),
-    weight: best.weightKg,
-    reps: best.reps,
-    rpe: best.rpe ?? null,
-    notes: best.notes ?? null,
-  });
+  return NextResponse.json<PreviousSessionBestResponse>(
+    {
+      found: true,
+      performedAt: priorSession.date.toISOString(),
+      weight: best.weightKg,
+      reps: best.reps,
+      rpe: best.rpe ?? null,
+      notes: best.notes ?? null,
+      setCount: allSets.length,
+    },
+    // Clients now hit this too — one request per exercise per render.
+    { headers: { "Cache-Control": "private, max-age=60" } }
+  );
 }

@@ -2,6 +2,18 @@
 
 import { formatWeight } from "@/lib/units";
 
+type CalendarSet = {
+  id: string;
+  weightKg: number;
+  reps: number;
+  rpe: number | null;
+  notes: string | null;
+  exerciseId: string;
+  plannedWeightKg: number | null;
+  plannedReps: number | null;
+  completedAt: string | Date | null;
+};
+
 export type CalendarSession = {
   id: string;
   name: string | null;
@@ -12,14 +24,7 @@ export type CalendarSession = {
     name: string;
     sessionId: string;
     catalogExerciseId: string | null;
-    sets: {
-      id: string;
-      weightKg: number;
-      reps: number;
-      rpe: number | null;
-      notes: string | null;
-      exerciseId: string;
-    }[];
+    sets: CalendarSet[];
   }[];
 };
 
@@ -38,14 +43,12 @@ function formatSetDisplay(set: {
   return parts.join(" · ");
 }
 
-function SetReadOnly({
-  set,
-}: {
-  set: { weightKg?: number | null; reps?: number | null; rpe?: number | null; notes?: string | null };
-}) {
+function SetReadOnly({ set }: { set: Partial<CalendarSet> }) {
+  const planned = set.completedAt == null;
   return (
-    <li className="text-sm text-[var(--text)]">
+    <li className={`text-sm ${planned ? "text-muted" : "text-[var(--text)]"}`}>
       {formatSetDisplay(set)}
+      {planned && <span className="ml-2 text-xs italic">planned — not completed</span>}
     </li>
   );
 }

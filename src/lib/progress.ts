@@ -1,17 +1,24 @@
-import type { WorkoutSession, Exercise, Set } from "@prisma/client";
+import type { WorkoutSession, Exercise, Set as PrismaSet } from "@prisma/client";
+import { isCompletedSet } from "@/lib/sets";
 
-type ExerciseWithSets = Exercise & { sets: Set[] };
+type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
 type SessionWithExercises = WorkoutSession & { exercises: ExerciseWithSets[] };
 
 export type BestSet = { weightKg: number; reps: number };
 export type ProgressRow = { sessionId: string; sessionDate: Date; bestSet: BestSet };
 export type ProgressByExercise = { exerciseName: string; rows: ProgressRow[] };
 
-function pickBestSet(sets: Set[]): BestSet | null {
-  if (sets.length === 0) return null;
-  let best = sets[0];
-  for (let i = 1; i < sets.length; i++) {
-    const s = sets[i];
+/**
+ * Best *performed* set. Planned-but-not-completed sets are excluded: their
+ * weightKg/reps are a target, so including them would report work as done that
+ * never happened. Exported for testing.
+ */
+export function pickBestSet(sets: PrismaSet[]): BestSet | null {
+  const performed = sets.filter(isCompletedSet);
+  if (performed.length === 0) return null;
+  let best = performed[0];
+  for (let i = 1; i < performed.length; i++) {
+    const s = performed[i];
     if (s.weightKg > best.weightKg || (s.weightKg === best.weightKg && s.reps > best.reps)) {
       best = s;
     }

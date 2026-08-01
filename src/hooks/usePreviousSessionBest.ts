@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type PreviousSessionBest =
-  | { found: true; performedAt: string; weight: number; reps: number; rpe: number | null; notes: string | null }
+  | {
+      found: true;
+      performedAt: string;
+      weight: number;
+      reps: number;
+      rpe: number | null;
+      notes: string | null;
+      /** Sets completed for this exercise in that prior session. */
+      setCount: number;
+    }
   | { found: false };
 
 const cache = new Map<string, PreviousSessionBest>();

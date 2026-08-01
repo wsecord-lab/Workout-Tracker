@@ -8,7 +8,8 @@ import type { getClientSessionsInMonth } from "@/lib/db/workouts";
 import type { CalendarSession } from "./SessionContentReadOnly";
 import { SessionContentReadOnly } from "./SessionContentReadOnly";
 import { SessionBlock } from "./SessionBlock";
-import { createSession, createSessionWithTemplate } from "@/app/actions/sessions";
+import { createSession, createSessionWithTemplate, repeatLastWorkout } from "@/app/actions/sessions";
+import { RepeatLastWorkoutPicker } from "./RepeatLastWorkoutPicker";
 import { listTemplates } from "@/app/actions/templates";
 import { markRestDay, clearRestDay } from "@/app/actions/rest-days";
 
@@ -92,6 +93,7 @@ export function CalendarClient({
   const [showAddSessionModal, setShowAddSessionModal] = useState(false);
   const [addSessionName, setAddSessionName] = useState("");
   const [addSessionTemplateId, setAddSessionTemplateId] = useState("");
+  const [addSessionRepeatId, setAddSessionRepeatId] = useState("");
   const [addTemplates, setAddTemplates] = useState<{ id: string; name: string }[]>([]);
   const [addSessionError, setAddSessionError] = useState<string | null>(null);
   const [addSessionPending, startAddSessionTransition] = useTransition();
@@ -211,6 +213,7 @@ export function CalendarClient({
       setShowAddSessionModal(false);
       setAddSessionName("");
       setAddSessionTemplateId("");
+      setAddSessionRepeatId("");
       setAddSessionError(null);
     }
   }
@@ -221,7 +224,17 @@ export function CalendarClient({
     setAddSessionError(null);
     startAddSessionTransition(async () => {
       try {
-        if (isTrainer && addSessionTemplateId.trim()) {
+        if (addSessionRepeatId.trim()) {
+          const result = await repeatLastWorkout(clientId, {
+            name: addSessionName.trim() || null,
+            sourceSessionId: addSessionRepeatId,
+            calendarDateKey: selectedDateKey,
+          });
+          if (!result.ok) {
+            setAddSessionError(result.error);
+            return;
+          }
+        } else if (isTrainer && addSessionTemplateId.trim()) {
           const result = await createSessionWithTemplate(
             clientId,
             addSessionName.trim() || null,
@@ -238,6 +251,7 @@ export function CalendarClient({
         setShowAddSessionModal(false);
         setAddSessionName("");
         setAddSessionTemplateId("");
+        setAddSessionRepeatId("");
         setAddSessionError(null);
         router.refresh();
       } catch {
@@ -311,6 +325,16 @@ export function CalendarClient({
               <p className="mt-1 text-xs text-muted">Adds exercises from the template. No sets are added.</p>
             </div>
           )}
+          <RepeatLastWorkoutPicker
+            clientId={clientId}
+            id="calendar-session-repeat"
+            value={addSessionRepeatId}
+            disabled={addSessionPending}
+            onChange={(id, option) => {
+              setAddSessionRepeatId(id);
+              if (id && option && !addSessionName.trim()) setAddSessionName(option.name);
+            }}
+          />
           {addSessionError && (
             <p className="text-sm text-error" role="alert">
               {addSessionError}
@@ -584,6 +608,16 @@ function sessionForReadOnly(session: CalendarMonthSession): CalendarSession {
         rpe: set.rpe != null ? Number(set.rpe) : null,
         notes: set.notes != null ? String(set.notes) : null,
         exerciseId: String(set.exerciseId),
+        // Hand-mapped, so these must be listed explicitly or a planned set
+        // renders here as though it were performed.
+        plannedWeightKg: set.plannedWeightKg != null ? Number(set.plannedWeightKg) : null,
+        plannedReps: set.plannedReps != null ? Number(set.plannedReps) : null,
+        completedAt:
+          set.completedAt == null
+            ? null
+            : typeof set.completedAt === "string"
+              ? set.completedAt
+              : new Date(set.completedAt).toISOString(),
       })),
     })),
   };

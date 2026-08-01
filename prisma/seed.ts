@@ -118,17 +118,19 @@ async function main() {
       },
     });
     const bench = await prisma.exercise.create({
-      data: { name: "Bench Press", sessionId: s1.id },
+      data: { name: "Bench Press", sessionId: s1.id, orderIndex: 0 },
     });
     const squat = await prisma.exercise.create({
-      data: { name: "Squat", sessionId: s2.id },
+      data: { name: "Squat", sessionId: s2.id, orderIndex: 0 },
     });
+    // completedAt is required for seeded sets to appear in charts, metrics, and
+    // exports — those read paths only count sets that were actually performed.
     await prisma.set.createMany({
       data: [
-        { weightKg: 60, reps: 10, exerciseId: bench.id, rpe: 7 },
-        { weightKg: 65, reps: 8, exerciseId: bench.id, rpe: 8, notes: "Felt strong" },
-        { weightKg: 80, reps: 5, exerciseId: squat.id },
-        { weightKg: 85, reps: 5, exerciseId: squat.id, rpe: 8.5 },
+        { weightKg: 60, reps: 10, exerciseId: bench.id, rpe: 7, orderIndex: 0, completedAt: s1.date },
+        { weightKg: 65, reps: 8, exerciseId: bench.id, rpe: 8, notes: "Felt strong", orderIndex: 1, completedAt: s1.date },
+        { weightKg: 80, reps: 5, exerciseId: squat.id, orderIndex: 0, completedAt: s2.date },
+        { weightKg: 85, reps: 5, exerciseId: squat.id, rpe: 8.5, orderIndex: 1, completedAt: s2.date },
       ],
     });
   }
@@ -203,17 +205,19 @@ async function main() {
             date: sessionDate,
           },
         });
-        for (const ex of template.exercises) {
+        for (const [exIndex, ex] of template.exercises.entries()) {
           const exercise = await prisma.exercise.create({
-            data: { name: ex.name, sessionId: session.id },
+            data: { name: ex.name, sessionId: session.id, orderIndex: exIndex },
           });
           await prisma.set.createMany({
-            data: ex.sets.map((s) => ({
+            data: ex.sets.map((s, setIndex) => ({
               exerciseId: exercise.id,
               weightKg: s.weightKg,
               reps: s.reps,
               rpe: s.rpe ?? null,
               notes: s.notes ?? null,
+              orderIndex: setIndex,
+              completedAt: sessionDate,
             })),
           });
         }

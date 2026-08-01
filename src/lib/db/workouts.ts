@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { COMPLETED_SET_WHERE } from "@/lib/sets";
 
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 100;
@@ -38,7 +39,10 @@ export async function getClientSessionsPaginated(params: {
   return { sessions: result, hasMore };
 }
 
-/** Last N sessions for progress/charts. Bounded to avoid loading full history. */
+/**
+ * Last N sessions for progress/charts. Bounded to avoid loading full history.
+ * Only completed sets — a planned set is a target, not a result.
+ */
 export async function getClientSessionsForCharts(clientId: string) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - CHART_WEIGHT_DAYS);
@@ -51,7 +55,7 @@ export async function getClientSessionsForCharts(clientId: string) {
       exercises: {
         where: { deletedAt: null },
         orderBy: { orderIndex: "asc" },
-        include: { sets: { orderBy: { orderIndex: "asc" } } },
+        include: { sets: { where: COMPLETED_SET_WHERE, orderBy: { orderIndex: "asc" } } },
       },
     },
   });

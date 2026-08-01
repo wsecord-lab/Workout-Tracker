@@ -2,8 +2,9 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { createSessionWithTemplate } from "@/app/actions/sessions";
+import { createSessionWithTemplate, repeatLastWorkout } from "@/app/actions/sessions";
 import { listTemplates } from "@/app/actions/templates";
+import { RepeatLastWorkoutPicker } from "./RepeatLastWorkoutPicker";
 
 const MODAL_BACKDROP_Z = 1000;
 const MODAL_PANEL_Z = 1001;
@@ -26,6 +27,7 @@ export function AddSessionButton({
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string>("");
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [repeatSessionId, setRepeatSessionId] = useState<string>("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -53,7 +55,16 @@ export function AddSessionButton({
     e.preventDefault();
     setSubmitError(null);
     startTransition(async () => {
-      if (canUseTemplates && templateId.trim()) {
+      if (repeatSessionId.trim()) {
+        const result = await repeatLastWorkout(clientId, {
+          name: name.trim() || null,
+          sourceSessionId: repeatSessionId,
+        });
+        if (!result.ok) {
+          setSubmitError(result.error);
+          return;
+        }
+      } else if (canUseTemplates && templateId.trim()) {
         const result = await createSessionWithTemplate(
           clientId,
           name.trim() || null,
@@ -68,6 +79,7 @@ export function AddSessionButton({
       }
       setName("");
       setTemplateId("");
+      setRepeatSessionId("");
       setShowModal(false);
     });
   }
@@ -77,6 +89,7 @@ export function AddSessionButton({
       setShowModal(false);
       setName("");
       setTemplateId("");
+      setRepeatSessionId("");
       setSubmitError(null);
     }
   }
@@ -138,6 +151,18 @@ export function AddSessionButton({
             </p>
           </div>
         )}
+        <RepeatLastWorkoutPicker
+          clientId={clientId}
+          id="session-repeat"
+          value={repeatSessionId}
+          disabled={isPending}
+          onChange={(id, option) => {
+            setRepeatSessionId(id);
+            // Prefill the name from the workout being copied, so the new session
+            // matches by name next time too.
+            if (id && option && !name.trim()) setName(option.name);
+          }}
+        />
         {submitError && (
           <p className="text-sm text-error" role="alert">
             {submitError}
