@@ -27,6 +27,18 @@ export async function createCatalogExercise(name: string): Promise<{ id: string;
   return catalog;
 }
 
+/**
+ * Next free orderIndex for a session. Counts soft-deleted exercises too, so a
+ * later restoreExercise can't collide with an index handed out in the meantime.
+ */
+async function nextExerciseOrderIndex(sessionId: string): Promise<number> {
+  const max = await prisma.exercise.aggregate({
+    where: { sessionId },
+    _max: { orderIndex: true },
+  });
+  return (max._max.orderIndex ?? -1) + 1;
+}
+
 export async function createExercise(
   sessionId: string,
   name: string,
@@ -35,11 +47,12 @@ export async function createExercise(
   const session = await prisma.workoutSession.findUnique({ where: { id: sessionId }, include: { client: true } });
   if (!session) return null;
   await assertClientAccess(session.clientId);
+  const orderIndex = await nextExerciseOrderIndex(sessionId);
   if (catalogExerciseId) {
     const catalog = await prisma.exerciseCatalog.findUnique({ where: { id: catalogExerciseId }, select: { name: true } });
     if (!catalog) return null;
     const exercise = await prisma.exercise.create({
-      data: { sessionId, name: catalog.name, catalogExerciseId },
+      data: { sessionId, name: catalog.name, catalogExerciseId, orderIndex },
       select: { id: true },
     });
     await invalidateClientMetricsCache(session.clientId);
@@ -49,7 +62,7 @@ export async function createExercise(
   const sanitizedName = sanitizeName(name, EXERCISE_NAME_MAX_LENGTH);
   if (!sanitizedName) return null;
   const exercise = await prisma.exercise.create({
-    data: { sessionId, name: sanitizedName },
+    data: { sessionId, name: sanitizedName, orderIndex },
     select: { id: true },
   });
   await invalidateClientMetricsCache(session.clientId);
@@ -113,6 +126,50 @@ export async function updateExerciseNotes(
     data: { notes: sanitized },
   });
   revalidateClientWorkoutViews(exercise.session.clientId);
+}
+
+export type ReorderResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Rewrite every exercise's orderIndex for one session, from a drag-and-drop
+ * reorder. `orderedExerciseIds` must be exactly the session's live (non-deleted)
+ * exercise ids — see reorderSets for why that equality check is load-bearing.
+ *
+ * Live exercises are renumbered from 0. Soft-deleted rows keep their old index;
+ * a restore may land them in an odd spot, which is preferable to resurrecting
+ * them into the middle of a reordered list.
+ */
+export async function reorderExercises(
+  sessionId: string,
+  orderedExerciseIds: string[]
+): Promise<ReorderResult> {
+  const session = await prisma.workoutSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      clientId: true,
+      exercises: { where: { deletedAt: null }, select: { id: true } },
+    },
+  });
+  if (!session) return { ok: false, error: "Session not found" };
+  await assertClientAccess(session.clientId);
+
+  const existingIds = new Set(session.exercises.map((e) => e.id));
+  const incomingIds = new Set(orderedExerciseIds);
+  if (
+    orderedExerciseIds.length !== session.exercises.length ||
+    incomingIds.size !== orderedExerciseIds.length ||
+    !orderedExerciseIds.every((id) => existingIds.has(id))
+  ) {
+    return { ok: false, error: "Exercise list does not match this session" };
+  }
+
+  await prisma.$transaction(
+    orderedExerciseIds.map((id, i) =>
+      prisma.exercise.update({ where: { id }, data: { orderIndex: i } })
+    )
+  );
+  revalidateClientWorkoutViews(session.clientId);
+  return { ok: true };
 }
 
 /** Permanently delete a soft-deleted exercise (after grace period or cleanup). */

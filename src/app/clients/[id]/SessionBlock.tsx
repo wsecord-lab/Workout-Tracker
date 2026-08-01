@@ -3,12 +3,18 @@
 import { useState, useTransition, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { WorkoutSession, Exercise, Set as PrismaSet } from "@prisma/client";
-import { updateSessionName, updateSessionNotes, applyTemplateToSession } from "@/app/actions/sessions";
+import { updateSessionName, updateSessionNotes, applyTemplateToSession, startSession, copyWorkoutIntoSession } from "@/app/actions/sessions";
+import { formatDuration, getSessionDurationSeconds } from "@/lib/session-duration";
+import { isCompletedSet } from "@/lib/sets";
 import { listTemplates } from "@/app/actions/templates";
+import { reorderExercises } from "@/app/actions/exercises";
 import { computeGroupPresentation } from "@/lib/group-presentation";
 import { AddExerciseForm } from "./AddExerciseForm";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 import { ExerciseRow } from "./ExerciseRow";
+import { SortableList } from "./SortableList";
+import { SessionDurationEditor } from "./SessionDurationEditor";
+import { RepeatLastWorkoutPicker } from "./RepeatLastWorkoutPicker";
 import { ActiveWorkoutMode } from "./ActiveWorkoutMode";
 import { WarmupDisplay, WarmupAssigner } from "./WarmupSection";
 import { WhoopExportButton } from "./WhoopExportButton";
@@ -69,17 +75,26 @@ export function SessionBlock({
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
   const [workoutActive, setWorkoutActive] = useState(false);
-  const [isInProgress, setIsInProgress] = useState(false);
+  const [startPending, startStartTransition] = useTransition();
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copySourceId, setCopySourceId] = useState("");
+  const [copyMode, setCopyMode] = useState<"replace" | "append">("replace");
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyPending, setCopyPending] = useState(false);
 
   const canUseTemplates = !isClient && !!trainerId;
 
-  // Check localStorage for in-progress state (client-side only)
-  useEffect(() => {
-    try {
-      const active = localStorage.getItem("workout_in_progress");
-      setIsInProgress(active === session.id);
-    } catch { /* ignore */ }
-  }, [session.id]);
+  // Derived from the server, not localStorage: a workout started on a phone must
+  // read as in-progress on the trainer's laptop too.
+  const isInProgress = session.startedAt != null && session.finishedAt == null;
+
+  function handleStartWorkout() {
+    startStartTransition(async () => {
+      await startSession(session.id, session.clientId);
+      setWorkoutActive(true);
+      router.refresh();
+    });
+  }
 
   useEffect(() => {
     if (!showApplyModal || !canUseTemplates) return;
@@ -115,7 +130,13 @@ export function SessionBlock({
 
   const dateStr = formatSessionDate(session.date);
   const exerciseCount = session.exercises.length;
+  const durationSeconds = getSessionDurationSeconds(session);
   const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
+  const completedSetCount = session.exercises.reduce(
+    (sum, e) => sum + e.sets.filter(isCompletedSet).length,
+    0
+  );
+  const hasSkippedSets = completedSetCount < totalSets;
   const groupPresentation = useMemo(
     () =>
       computeGroupPresentation(
@@ -164,6 +185,100 @@ export function SessionBlock({
       setApplyError(result.error ?? "Failed to apply template");
     }
   }
+
+  async function handleCopyWorkout(e: React.FormEvent) {
+    e.preventDefault();
+    if (!copySourceId.trim()) return;
+    setCopyError(null);
+    setCopyPending(true);
+    const result = await copyWorkoutIntoSession(session.id, copySourceId, copyMode);
+    setCopyPending(false);
+    if (result.ok) {
+      setShowCopyModal(false);
+      setCopySourceId("");
+      setCopyMode("replace");
+      router.refresh();
+    } else {
+      setCopyError(result.error);
+    }
+  }
+
+  const copyModal =
+    showCopyModal &&
+    typeof document !== "undefined" &&
+    createPortal(
+      <div
+        className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 z-[1001]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="copy-workout-title"
+        onClick={() => !copyPending && setShowCopyModal(false)}
+      >
+        <form
+          onSubmit={handleCopyWorkout}
+          className="card w-full max-w-sm space-y-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 id="copy-workout-title" className="text-lg font-semibold text-[var(--text)]">
+            Repeat a previous workout
+          </h3>
+          <RepeatLastWorkoutPicker
+            clientId={session.clientId}
+            id={`copy-workout-${session.id}`}
+            label="Workout to copy"
+            value={copySourceId}
+            disabled={copyPending}
+            onChange={(id) => setCopySourceId(id)}
+          />
+          <div>
+            <span className="block text-sm font-medium text-[var(--text)] mb-2">Mode</span>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name={`copy-mode-${session.id}`}
+                checked={copyMode === "replace"}
+                onChange={() => setCopyMode("replace")}
+                disabled={copyPending}
+              />
+              Replace existing exercises
+            </label>
+            <label className="flex items-center gap-2 text-sm mt-1">
+              <input
+                type="radio"
+                name={`copy-mode-${session.id}`}
+                checked={copyMode === "append"}
+                onChange={() => setCopyMode("append")}
+                disabled={copyPending}
+              />
+              Append to existing
+            </label>
+          </div>
+          {copyError && (
+            <p className="text-sm text-error" role="alert">
+              {copyError}
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setShowCopyModal(false)}
+              disabled={copyPending}
+              className="btn-secondary text-sm py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={copyPending || !copySourceId}
+              className="btn-primary text-sm py-1.5"
+            >
+              {copyPending ? "Copying…" : "Copy"}
+            </button>
+          </div>
+        </form>
+      </div>,
+      document.body
+    );
 
   const applyModal =
     showApplyModal &&
@@ -284,6 +399,9 @@ export function SessionBlock({
               ● In Progress
             </span>
           ) : null}
+          {durationSeconds != null ? (
+            <span className="shrink-0 whitespace-nowrap">{formatDuration(durationSeconds)}</span>
+          ) : null}
           {notesTruncated ? (
             <span className="max-w-full truncate text-left sm:text-right" title={notesPreview}>
               {notesTruncated}
@@ -291,7 +409,11 @@ export function SessionBlock({
           ) : null}
           <span className="shrink-0 whitespace-nowrap">
             {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
-            {totalSets > 0 ? ` · ${totalSets} set${totalSets !== 1 ? "s" : ""}` : ""}
+            {totalSets > 0
+              ? hasSkippedSets
+                ? ` · ${completedSetCount}/${totalSets} sets`
+                : ` · ${totalSets} set${totalSets !== 1 ? "s" : ""}`
+              : ""}
           </span>
           <span
             className={`inline-block shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -409,13 +531,15 @@ export function SessionBlock({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isClient && !session.finishedAt && (
+            {/* Trainers get this too — useful when logging for a client in person. */}
+            {!session.finishedAt && (
               <button
                 type="button"
-                onClick={() => { setWorkoutActive(true); setIsInProgress(true); }}
-                className="btn-primary text-sm py-1.5 px-4 gap-1.5 font-semibold"
+                onClick={handleStartWorkout}
+                disabled={startPending}
+                className="btn-primary text-sm py-1.5 px-4 gap-1.5 font-semibold disabled:opacity-50"
               >
-                {isInProgress ? "⏵ Resume Workout" : "▶ Start Workout"}
+                {startPending ? "…" : isInProgress ? "⏵ Resume Workout" : "▶ Start Workout"}
               </button>
             )}
             {session.exercises.length > 0 && (
@@ -436,6 +560,14 @@ export function SessionBlock({
                 </button>
               </>
             )}
+            {/* Ungated: copying a past workout forward is useful to both roles. */}
+            <button
+              type="button"
+              onClick={() => setShowCopyModal(true)}
+              className="btn-secondary text-sm py-1.5 px-3 gap-1.5"
+            >
+              <span aria-hidden="true">🔁</span> Repeat Workout
+            </button>
             {canUseTemplates && (
               <button
                 type="button"
@@ -459,22 +591,40 @@ export function SessionBlock({
             />
           )}
 
-          {session.exercises.map((exercise) => (
-            <ExerciseRow
-              key={exercise.id}
-              exercise={exercise}
-              isOpen={openExerciseIds.has(exercise.id)}
-              onToggle={() => toggleExercise(exercise.id)}
-              clientId={session.clientId}
-              sessionDate={session.date}
-              showPreviousBest={showPreviousBest}
-              groupPresentation={groupPresentation.byExerciseId.get(exercise.id)}
-              uniqueGroups={groupPresentation.uniqueGroups}
-              sessionId={session.id}
-              onGroupChange={() => router.refresh()}
-              isClient={isClient}
-            />
-          ))}
+          <SortableList
+            items={session.exercises}
+            className="space-y-3"
+            itemLabel={(ex) => `Reorder ${ex.name}`}
+            onReorder={(ids) => reorderExercises(session.id, ids)}
+            renderItem={(exercise, _i, { handle }) => (
+              <ExerciseRow
+                exercise={exercise}
+                isOpen={openExerciseIds.has(exercise.id)}
+                onToggle={() => toggleExercise(exercise.id)}
+                clientId={session.clientId}
+                sessionDate={session.date}
+                showPreviousBest={showPreviousBest}
+                groupPresentation={groupPresentation.byExerciseId.get(exercise.id)}
+                uniqueGroups={groupPresentation.uniqueGroups}
+                sessionId={session.id}
+                onGroupChange={() => router.refresh()}
+                isClient={isClient}
+                dragHandle={handle}
+              />
+            )}
+            renderOverlay={(exercise) => (
+              <div className="w-[min(48rem,92vw)] opacity-95 shadow-lg">
+                <ExerciseRow
+                  exercise={exercise}
+                  isOpen={false}
+                  onToggle={() => {}}
+                  groupPresentation={groupPresentation.byExerciseId.get(exercise.id)}
+                  isClient={isClient}
+                />
+              </div>
+            )}
+          />
+
           <AddExerciseForm
             sessionId={session.id}
             catalog={catalog}
@@ -482,6 +632,13 @@ export function SessionBlock({
             onExerciseAdded={handleExerciseAdded}
             canAddNewExercise={canAddNewExercise}
           />
+          <div className="pt-2 border-t border-[var(--border)]">
+            <SessionDurationEditor
+              sessionId={session.id}
+              clientId={session.clientId}
+              session={session}
+            />
+          </div>
           <div className="pt-2 border-t border-[var(--border)]">
             <DeleteSessionButton
               sessionId={session.id}
@@ -493,6 +650,7 @@ export function SessionBlock({
         </div>
       )}
       {applyModal}
+      {copyModal}
       {workoutActive && (
         <ActiveWorkoutMode
           exercises={session.exercises}
@@ -500,8 +658,9 @@ export function SessionBlock({
           sessionDate={session.date}
           sessionId={session.id}
           clientId={session.clientId}
+          startedAt={session.startedAt}
           onExit={() => { setWorkoutActive(false); router.refresh(); }}
-          onFinish={() => { setWorkoutActive(false); setIsInProgress(false); router.refresh(); }}
+          onFinish={() => { setWorkoutActive(false); router.refresh(); }}
         />
       )}
     </section>

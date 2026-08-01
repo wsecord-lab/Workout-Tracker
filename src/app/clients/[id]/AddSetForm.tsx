@@ -116,19 +116,15 @@ export function AddSetForm({
   useEffect(() => {
     if (!scrollToNewSetRef.current || !lastSet?.id) return;
     const t = setTimeout(() => {
-      const formEl = singleSetFormRef.current;
-      const wrapper = formEl?.parentElement;
-      const ul = wrapper?.previousElementSibling;
-      if (ul?.tagName === "UL") {
-        const lastLi = ul.lastElementChild;
-        if (lastLi instanceof HTMLElement) {
-          lastLi.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          lastLi.classList.add("ring-2", "ring-primary/60", "ring-offset-2", "rounded");
-          const clearHighlight = () => {
-            lastLi.classList.remove("ring-2", "ring-primary/60", "ring-offset-2", "rounded");
-          };
-          window.setTimeout(clearHighlight, 1800);
-        }
+      // Target the row by id rather than walking the DOM: the set list is now
+      // wrapped in a sortable container, so the old
+      // form → parent → previousSibling walk no longer lands on the <ul>.
+      const row = document.getElementById(`set-${lastSet.id}`);
+      if (row instanceof HTMLElement) {
+        row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        const highlight = ["ring-2", "ring-primary/60", "ring-offset-2", "rounded"];
+        row.classList.add(...highlight);
+        window.setTimeout(() => row.classList.remove(...highlight), 1800);
       }
       scrollToNewSetRef.current = false;
     }, 120);

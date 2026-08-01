@@ -7,9 +7,14 @@ import { formatWeight } from "@/lib/units";
 import type { GroupPresentation } from "@/lib/group-presentation";
 import { usePreviousSessionBest } from "@/hooks/usePreviousSessionBest";
 import { updateExerciseNotes } from "@/app/actions/exercises";
+import { reorderSets } from "@/app/actions/sets";
+import { isCompletedSet, isPlannedOnly, summarizeExerciseSets } from "@/lib/sets";
 import { AddSetForm } from "./AddSetForm";
+import { PlanSetsForm } from "./PlanSetsForm";
 import { DeleteExerciseButton } from "./DeleteExerciseButton";
 import { SetRow } from "./SetRow";
+import { SortableList } from "./SortableList";
+import { DragHandle, type DragHandleProps } from "./DragHandle";
 
 type ExerciseWithSets = Exercise & { sets: Set[] };
 
@@ -33,6 +38,7 @@ export function ExerciseRow({
   sessionId,
   onGroupChange,
   isClient = false,
+  dragHandle,
 }: {
   exercise: ExerciseWithSets;
   isOpen: boolean;
@@ -45,6 +51,8 @@ export function ExerciseRow({
   sessionId?: string;
   onGroupChange?: () => void;
   isClient?: boolean;
+  /** Omitted in read-only contexts (e.g. the drag overlay preview). */
+  dragHandle?: DragHandleProps;
 }) {
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const groupTriggerRef = useRef<HTMLDivElement>(null);
@@ -140,6 +148,7 @@ export function ExerciseRow({
   });
   const contentRef = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState(0);
+  const [isDraggingSet, setIsDraggingSet] = useState(false);
 
   useEffect(() => {
     if (isOpen && contentRef.current) {
@@ -153,26 +162,37 @@ export function ExerciseRow({
   }, [isOpen, exercise.sets.length]);
 
   useEffect(() => {
-    if (!contentRef.current || !isOpen) return;
+    // Skip while a set is being dragged: dnd-kit's transforms retrigger the
+    // observer every frame, and re-measuring mid-drag makes the panel jitter.
+    if (!contentRef.current || !isOpen || isDraggingSet) return;
     const el = contentRef.current;
     const observer = new ResizeObserver(() => {
       setMaxHeight(el.scrollHeight);
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isOpen]);
+  }, [isOpen, isDraggingSet]);
 
   const showGroupControls = !!sessionId && !!onGroupChange && !isClient;
 
-  // Sets sorted ascending by orderIndex; displayed in reverse (newest first)
+  // Set 1 first, matching the order they're performed in (and workout mode).
   const setsAsc = [...exercise.sets].sort((a, b) => a.orderIndex - b.orderIndex);
-  const setsDisplayed = [...setsAsc].reverse();
+  const summary = summarizeExerciseSets(setsAsc);
+  // Prefill the add form from the last set actually performed, not from a
+  // planned target that may never be hit.
+  const lastCompletedSet = [...setsAsc].reverse().find(isCompletedSet) ?? null;
 
   return (
     <div
       className={`relative min-w-0 overflow-x-hidden rounded border border-border p-3 ${groupPresentation ? `border-l-4 ${groupPresentation.borderClass} ${groupPresentation.cardTintClass}` : "bg-background"}`}
     >
       <div className="sticky top-0 z-[5] flex min-w-0 flex-col gap-1.5 overflow-x-hidden bg-background py-3 -mx-3 px-3 rounded sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:min-h-[44px]">
+        <div className="flex min-w-0 w-full flex-1 items-start gap-1">
+        {dragHandle && (
+          <div className="mt-0.5 shrink-0">
+            <DragHandle {...dragHandle} />
+          </div>
+        )}
         <button
           type="button"
           onClick={onToggle}
@@ -216,7 +236,9 @@ export function ExerciseRow({
                 {previousBestLoading && "Fetching previous session best…"}
                 {!previousBestLoading && previousBest?.found === true && (
                   <>
-                    Previous session best: {formatWeight(previousBest.weight)}×{previousBest.reps} (
+                    Last time: {previousBest.setCount}{" "}
+                    {previousBest.setCount === 1 ? "set" : "sets"} · best{" "}
+                    {formatWeight(previousBest.weight)}×{previousBest.reps} (
                     {formatPreviousBestDate(previousBest.performedAt)})
                   </>
                 )}
@@ -231,11 +253,16 @@ export function ExerciseRow({
                   No sets yet
                 </span>
               ) : (
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {setsDisplayed.slice(0, 6).map((s) => (
+                <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                  {setsAsc.slice(0, 6).map((s) => (
                     <span
                       key={s.id}
-                      className="inline-flex items-center rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted"
+                      title={isPlannedOnly(s) ? "Planned — not completed" : undefined}
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
+                        isPlannedOnly(s)
+                          ? "border border-dashed border-muted/60 text-muted/70"
+                          : "bg-muted/15 text-muted"
+                      }`}
                     >
                       {formatWeight(s.weightKg)}×{s.reps}
                     </span>
@@ -245,11 +272,17 @@ export function ExerciseRow({
                       +{exercise.sets.length - 6} more
                     </span>
                   )}
+                  {summary.skippedCount > 0 && (
+                    <span className="inline-flex items-center text-xs text-amber-600 dark:text-amber-400">
+                      {summary.completedCount}/{summary.totalCount} done
+                    </span>
+                  )}
                 </div>
               )
             )}
           </div>
         </button>
+        </div>
         <div className="flex items-center gap-1 shrink-0 self-stretch sm:self-auto justify-end sm:justify-start min-h-[44px] sm:min-h-0" ref={groupTriggerRef}>
           {showGroupControls && (
             <>
@@ -405,24 +438,33 @@ export function ExerciseRow({
               </div>
             )}
           </div>
-          <ul className="mb-2 space-y-1.5">
-            {setsDisplayed.map((s, i) => (
-              <SetRow
-                key={s.id}
-                set={s}
-                setNumber={setsAsc.indexOf(s) + 1}
-                isFirst={i === 0}
-                isLast={i === setsDisplayed.length - 1}
-                prevSetId={i > 0 ? setsDisplayed[i - 1].id : undefined}
-                nextSetId={i < setsDisplayed.length - 1 ? setsDisplayed[i + 1].id : undefined}
-              />
-            ))}
+          <ul className="mb-2">
+            <SortableList
+              items={setsAsc}
+              className="space-y-1.5"
+              itemLabel={(_s, i) => `Reorder set ${i + 1}`}
+              onDragStateChange={setIsDraggingSet}
+              onReorder={(ids) => reorderSets(exercise.id, ids)}
+              renderItem={(s, i, { handle }) => (
+                <SetRow set={s} setNumber={i + 1} dragHandle={handle} />
+              )}
+              renderOverlay={(s, i) => (
+                <ul className="w-[min(28rem,90vw)] opacity-95 shadow-lg">
+                  <SetRow set={s} setNumber={i + 1} />
+                </ul>
+              )}
+            />
           </ul>
           <AddSetForm
             exerciseId={exercise.id}
-            lastSet={setsAsc.length > 0 ? setsAsc[setsAsc.length - 1] : null}
+            lastSet={lastCompletedSet ?? (setsAsc.length > 0 ? setsAsc[setsAsc.length - 1] : null)}
             setCount={exercise.sets.length}
           />
+          {!isClient && (
+            <div className="mt-2">
+              <PlanSetsForm exerciseId={exercise.id} />
+            </div>
+          )}
         </div>
       </div>
     </div>

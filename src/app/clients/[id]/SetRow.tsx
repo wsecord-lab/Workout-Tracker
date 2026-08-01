@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Set } from "@prisma/client";
-import { deleteSet, updateSet, swapSetOrder } from "@/app/actions/sets";
+import { deleteSet, updateSet, completeSet, uncompleteSet } from "@/app/actions/sets";
 import { formatWeight, toDisplay } from "@/lib/units";
+import { formatPlanVsActual, isPlannedOnly } from "@/lib/sets";
+import { DragHandle, type DragHandleProps } from "./DragHandle";
 
 function PencilIcon() {
   return (
@@ -24,22 +27,6 @@ function TrashIcon() {
   );
 }
 
-function ChevronUpIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 7.5l3.5-4 3.5 4" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 3.5l3.5 4 3.5-4" />
-    </svg>
-  );
-}
-
 const RPE_OPTIONS: (number | "")[] = [
   "",
   ...Array.from({ length: 19 }, (_, i) => 1 + i * 0.5),
@@ -48,17 +35,12 @@ const RPE_OPTIONS: (number | "")[] = [
 export function SetRow({
   set,
   setNumber,
-  isFirst = false,
-  isLast = false,
-  prevSetId,
-  nextSetId,
+  dragHandle,
 }: {
   set: Set;
   setNumber?: number;
-  isFirst?: boolean;
-  isLast?: boolean;
-  prevSetId?: string;
-  nextSetId?: string;
+  /** Omitted in read-only contexts (e.g. the drag overlay preview). */
+  dragHandle?: DragHandleProps;
 }) {
   const [editing, setEditing] = useState(false);
   const [weightLb, setWeightLb] = useState(String(toDisplay(set.weightKg, "weight")));
@@ -67,7 +49,7 @@ export function SetRow({
   const [notes, setNotes] = useState(set.notes ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
-  const [isReordering, startReorder] = useTransition();
+  const router = useRouter();
 
   function handleSave() {
     setErrors({});
@@ -95,52 +77,46 @@ export function SetRow({
     setErrors({});
   }
 
-  function handleMoveUp() {
-    if (!prevSetId) return;
-    startReorder(async () => { await swapSetOrder(set.id, prevSetId); });
-  }
-
-  function handleMoveDown() {
-    if (!nextSetId) return;
-    startReorder(async () => { await swapSetOrder(set.id, nextSetId); });
-  }
-
   const hasDetails = set.rpe != null || (set.notes != null && set.notes !== "");
+  const planned = isPlannedOnly(set);
+  const planNote = formatPlanVsActual(set);
+
+  function toggleComplete() {
+    startTransition(async () => {
+      if (planned) await completeSet(set.id);
+      else await uncompleteSet(set.id);
+      router.refresh();
+    });
+  }
 
   return (
-    <li className="text-sm">
+    <li className="text-sm" id={`set-${set.id}`}>
       {!editing && (
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-2">
-          {/* Reorder buttons */}
-          <div className="flex flex-col gap-0.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleMoveUp}
-              disabled={isFirst || isReordering || isPending}
-              className="flex h-4 w-5 items-center justify-center rounded text-muted hover:text-[var(--text)] disabled:opacity-20 outline-none focus:ring-1 focus:ring-primary"
-              title="Move up"
-            >
-              <ChevronUpIcon />
-            </button>
-            <button
-              type="button"
-              onClick={handleMoveDown}
-              disabled={isLast || isReordering || isPending}
-              className="flex h-4 w-5 items-center justify-center rounded text-muted hover:text-[var(--text)] disabled:opacity-20 outline-none focus:ring-1 focus:ring-primary"
-              title="Move down"
-            >
-              <ChevronDownIcon />
-            </button>
-          </div>
-          {setNumber != null && (
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
-              {setNumber}
-            </span>
-          )}
+        <div
+          className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 ${
+            planned ? "border-dashed border-muted/50 bg-surface/50" : "border-border bg-surface"
+          }`}
+        >
+          {dragHandle && <DragHandle {...dragHandle} />}
+          <button
+            type="button"
+            onClick={toggleComplete}
+            disabled={isPending}
+            aria-pressed={!planned}
+            title={planned ? "Mark this set done" : "Mark this set not done"}
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold outline-none transition-colors focus:ring-2 focus:ring-primary disabled:opacity-50 ${
+              planned
+                ? "border-dashed border-muted text-muted hover:border-primary hover:text-primary"
+                : "border-primary bg-primary text-white"
+            }`}
+          >
+            {setNumber ?? ""}
+          </button>
           <div className="min-w-0 flex-1">
-            <span className={`font-medium ${isReordering ? "opacity-50" : ""}`}>
+            <span className={`font-medium ${planned ? "text-muted" : ""}`}>
               {formatWeight(set.weightKg)} × {set.reps} reps
             </span>
+            {planned && <span className="ml-2 text-xs text-muted italic">planned</span>}
             {hasDetails && (
               <span className="ml-2 text-xs text-muted">
                 {set.rpe != null && `RPE ${set.rpe}`}
@@ -148,6 +124,7 @@ export function SetRow({
                 {set.notes?.trim() && `"${set.notes}"`}
               </span>
             )}
+            {planNote && <span className="block text-xs text-amber-600 dark:text-amber-400">{planNote}</span>}
           </div>
           <button
             type="button"

@@ -101,6 +101,35 @@ export async function getSessionAccessForApi(sessionId: string): Promise<
 }
 
 /**
+ * For API routes: non-redirecting mirror of assertClientAccess.
+ * - TRAINER: allowed when they own the client (legacy trainerId == null allowed).
+ * - CLIENT: allowed when Client.userId === session.user.id.
+ * Returns a status so the route can respond 401/403/404 instead of redirecting.
+ */
+export async function getClientAccessForApi(
+  clientId: string
+): Promise<{ allowed: true } | { allowed: false; status: 401 | 403 | 404 }> {
+  const session = await auth();
+  if (!session?.user?.id) return { allowed: false, status: 401 };
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { trainerId: true, userId: true },
+  });
+  if (!client) return { allowed: false, status: 404 };
+  const role = (session.user as AuthUser).role;
+  if (role === "TRAINER") {
+    if (client.trainerId != null && client.trainerId !== session.user.id) {
+      return { allowed: false, status: 403 };
+    }
+    return { allowed: true };
+  }
+  if (role === "CLIENT" && client.userId === session.user.id) {
+    return { allowed: true };
+  }
+  return { allowed: false, status: 403 };
+}
+
+/**
  * Get the client profile id for the current CLIENT user, or null if not a client or not linked.
  */
 export async function getClientIdForCurrentUser(): Promise<string | null> {

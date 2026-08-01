@@ -169,6 +169,8 @@ model AuditLog {
 model WorkoutSession {
   id            String       @id @default(cuid())
   name          String?
+  /// Lowercased/whitespace-collapsed `name`, for "last Upper Body workout" matching.
+  normalizedName String?
   notes         String?      @db.Text
   date          DateTime     @default(now())
   clientId      String
@@ -176,9 +178,14 @@ model WorkoutSession {
   exercises     Exercise[]
   warmupBlockId String?
   warmupBlock   WarmupBlock? @relation(fields: [warmupBlockId], references: [id], onDelete: SetNull)
+  /// Stamped when workout mode is first entered.
+  startedAt     DateTime?
   finishedAt    DateTime?
+  /// Manual duration override in seconds. Null = derive from startedAt/finishedAt.
+  durationSeconds Int?
 
   @@index([clientId, date])
+  @@index([clientId, normalizedName, date])
   @@index([warmupBlockId])
 }
 
@@ -247,8 +254,15 @@ model Exercise {
 
 model Set {
   id         String   @id @default(cuid())
+  /// ACTUAL performed weight once completedAt is set; the TARGET while still planned.
   weightKg   Float
+  /// ACTUAL performed reps once completedAt is set; the TARGET while still planned.
   reps       Int
+  /// Snapshot of the planned target. Null for ad-hoc logged sets that were never planned.
+  plannedWeightKg Float?
+  plannedReps     Int?
+  /// Null = planned but not performed. Non-null = actually done.
+  completedAt DateTime?
   rpe        Float?
   notes      String?
   orderIndex Int      @default(0)
@@ -258,6 +272,7 @@ model Set {
 
   @@index([exerciseId])
   @@index([exerciseId, orderIndex])
+  @@index([exerciseId, completedAt])
 }
 
 // —— Workout Templates (trainer-only, global) ———

@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition } from "react";
+import { useState, useEffect, useMemo, useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import type { Exercise, Set as PrismaSet } from "@prisma/client";
-import { formatWeight, toDisplay } from "@/lib/units";
-import { createSet, updateSet } from "@/app/actions/sets";
-import { markSessionFinished } from "@/app/actions/sessions";
+import { formatWeight, toDisplay, toStorage } from "@/lib/units";
+import { formatClock, formatDuration, getElapsedSeconds } from "@/lib/session-duration";
+import { createSet, updateSet, completeSet, uncompleteSet, syncCheckedSets } from "@/app/actions/sets";
+import { isCompletedSet, isPlannedOnly, formatPlanVsActual } from "@/lib/sets";
+import { markSessionFinished, getSessionDurationEstimate } from "@/app/actions/sessions";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
 
@@ -186,6 +189,7 @@ export function ActiveWorkoutMode({
   sessionDate,
   sessionId,
   clientId,
+  startedAt,
   onExit,
   onFinish,
 }: {
@@ -194,24 +198,75 @@ export function ActiveWorkoutMode({
   sessionDate: Date;
   sessionId: string;
   clientId: string;
+  /** When the workout clock started. Null only if startSession hasn't landed yet. */
+  startedAt: Date | string | null;
   onExit: () => void;
   onFinish: () => void;
 }) {
-  const checkedKey = `workout_checked_${sessionId}`;
-
-  const [checked, setChecked] = useState<globalThis.Set<string>>(() => {
-    if (typeof window === "undefined") return new globalThis.Set();
-    try {
-      const raw = localStorage.getItem(checkedKey);
-      return raw ? new globalThis.Set(JSON.parse(raw) as string[]) : new globalThis.Set();
-    } catch { return new globalThis.Set(); }
-  });
-
+  const router = useRouter();
   const [liveExercises, setLiveExercises] = useState<ExerciseWithSets[]>(exercises);
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [isFinishing, startFinishTransition] = useTransition();
+  const [, startToggleTransition] = useTransition();
+
+  // Completion lives in the database now, so it survives a device switch and the
+  // trainer can see it. Derived, never stored separately.
+  const checked = useMemo(
+    () =>
+      new globalThis.Set(
+        liveExercises.flatMap((ex) => ex.sets.filter(isCompletedSet).map((s) => s.id))
+      ),
+    [liveExercises]
+  );
+
+  // Re-seed from the server after a refresh confirms our optimistic writes.
+  useEffect(() => { setLiveExercises(exercises); }, [exercises]);
+
+  // One-shot migration off the old localStorage check state. Runs before the
+  // user can touch anything, and is a no-op once the key is gone.
+  useEffect(() => {
+    const checkedKey = `workout_checked_${sessionId}`;
+    let ids: string[] = [];
+    try {
+      const raw = localStorage.getItem(checkedKey);
+      ids = raw ? (JSON.parse(raw) as string[]) : [];
+    } catch { return; }
+    if (ids.length === 0) {
+      try { localStorage.removeItem(checkedKey); } catch { /* ignore */ }
+      return;
+    }
+    syncCheckedSets(sessionId, ids).then(() => {
+      try { localStorage.removeItem(checkedKey); } catch { /* ignore */ }
+      router.refresh();
+    });
+  }, [sessionId, router]);
 
   const timer = useRestTimer();
+
+  // Live elapsed clock. Recomputed from startedAt rather than incremented, so
+  // it stays correct after the phone sleeps or the tab is backgrounded.
+  const [elapsed, setElapsed] = useState(() => (startedAt ? getElapsedSeconds(startedAt) : 0));
+  useEffect(() => {
+    if (!startedAt) return;
+    const tick = () => setElapsed(getElapsedSeconds(startedAt));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [startedAt]);
+
+  // Pacing estimate from past workouts of the same name.
+  const [estimateSeconds, setEstimateSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSessionDurationEstimate(sessionId, clientId).then((r) => {
+      if (!cancelled) setEstimateSeconds(r.averageSeconds);
+    });
+    return () => { cancelled = true; };
+  }, [sessionId, clientId]);
 
   // Mark session in-progress in localStorage
   useEffect(() => {
@@ -225,22 +280,39 @@ export function ActiveWorkoutMode({
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  function persistChecked(next: globalThis.Set<string>) {
-    try { localStorage.setItem(checkedKey, JSON.stringify([...next])); } catch { /* ignore */ }
-  }
-
   function toggleSet(setId: string) {
-    setChecked((prev) => {
-      const next = new globalThis.Set(prev);
-      if (next.has(setId)) {
-        next.delete(setId);
-        if (next.size === 0) timer.reset();
-      } else {
-        next.add(setId);
-        timer.start();
-      }
-      persistChecked(next);
-      return next;
+    if (setId.startsWith("tmp-")) return; // optimistic row, not persisted yet
+    const wasChecked = checked.has(setId);
+
+    // Optimistic: the check must feel instant mid-set. The server call follows
+    // and router.refresh() reconciles.
+    setLiveExercises((prev) =>
+      prev.map((ex) => ({
+        ...ex,
+        sets: ex.sets.map((s) =>
+          s.id === setId
+            ? {
+                ...s,
+                completedAt: wasChecked ? null : new Date(),
+                ...(wasChecked && s.plannedWeightKg != null && s.plannedReps != null
+                  ? { weightKg: s.plannedWeightKg, reps: s.plannedReps }
+                  : {}),
+              }
+            : s
+        ),
+      }))
+    );
+
+    if (wasChecked) {
+      if (checked.size <= 1) timer.reset();
+    } else {
+      timer.start();
+    }
+
+    startToggleTransition(async () => {
+      if (wasChecked) await uncompleteSet(setId);
+      else await completeSet(setId);
+      router.refresh();
     });
   }
 
@@ -251,11 +323,15 @@ export function ActiveWorkoutMode({
         const fakeSet: PrismaSet = {
           id: `tmp-${Date.now()}`,
           exerciseId,
-          weightKg: parseFloat(info.weightLb) / 2.20462,
+          weightKg: toStorage(parseFloat(info.weightLb) || 0, "weight"),
           reps: parseInt(info.reps, 10) || 0,
           rpe: null, notes: null,
           orderIndex: ex.sets.length,
           createdAt: new Date(),
+          // Logged live in workout mode, so it counts as done. Mirrors createSet.
+          plannedWeightKg: null,
+          plannedReps: null,
+          completedAt: new Date(),
         };
         return { ...ex, sets: [...ex.sets, fakeSet] };
       })
@@ -274,10 +350,17 @@ export function ActiveWorkoutMode({
   }
 
   function handleFinish() {
+    const skipped = totalSets - completedSets;
+    if (skipped > 0) {
+      const ok = window.confirm(
+        `${skipped} planned set${skipped === 1 ? "" : "s"} not completed.\n\n` +
+          `They'll be kept on the workout as skipped, so you can see what was planned vs done. Finish anyway?`
+      );
+      if (!ok) return;
+    }
     startFinishTransition(async () => {
       await markSessionFinished(sessionId, clientId);
       try {
-        localStorage.removeItem(checkedKey);
         localStorage.removeItem(IN_PROGRESS_KEY);
         localStorage.removeItem(TIMER_KEY);
       } catch { /* ignore */ }
@@ -312,6 +395,10 @@ export function ActiveWorkoutMode({
         <div className="min-w-0">
           <p className="text-xs text-muted">{dateLabel}</p>
           <h2 className="truncate text-base font-semibold text-[var(--text)]">{sessionName ?? "Workout"}</h2>
+          <p className="flex items-baseline gap-1.5 text-xs text-muted">
+            <span className="font-mono tabular-nums text-[var(--text)]">{formatClock(elapsed)}</span>
+            {estimateSeconds != null && <span>· avg {formatDuration(estimateSeconds)}</span>}
+          </p>
         </div>
 
         {/* Countdown timer */}
@@ -405,14 +492,25 @@ export function ActiveWorkoutMode({
                     );
                   }
 
+                  const planned = isPlannedOnly(s);
+                  const planNote = formatPlanVsActual(s);
+
                   return (
                     <div key={s.id} className={`flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm transition-colors ${
-                      done ? "border-green-500/50 bg-green-500/10" : "border-border bg-background"
+                      done
+                        ? "border-green-500/50 bg-green-500/10"
+                        : planned
+                        ? "border-dashed border-muted/60 bg-background"
+                        : "border-border bg-background"
                     }`}>
                       {/* Check circle */}
                       <button type="button" onClick={() => toggleSet(s.id)}
                         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-colors ${
-                          done ? "border-green-500 bg-green-500 text-white" : "border-border hover:border-primary/70"
+                          done
+                            ? "border-green-500 bg-green-500 text-white"
+                            : planned
+                            ? "border-dashed border-muted text-muted hover:border-primary/70"
+                            : "border-border hover:border-primary/70"
                         }`}>
                         {done ? "✓" : i + 1}
                       </button>
@@ -421,10 +519,22 @@ export function ActiveWorkoutMode({
                       <span
                         role="button"
                         onClick={() => toggleSet(s.id)}
-                        className={`flex-1 font-medium cursor-pointer ${done ? "text-green-700 dark:text-green-400 line-through opacity-70" : "text-[var(--text)]"}`}
+                        className={`flex-1 cursor-pointer font-medium ${
+                          done
+                            ? "text-green-700 dark:text-green-400 line-through opacity-70"
+                            : planned
+                            ? "text-muted"
+                            : "text-[var(--text)]"
+                        }`}
                       >
                         {formatWeight(s.weightKg)} × {s.reps} reps
+                        {planned && <span className="ml-2 text-xs font-normal italic">target</span>}
                         {s.rpe != null && <span className="ml-2 text-xs font-normal opacity-70">RPE {s.rpe}</span>}
+                        {planNote && (
+                          <span className="block text-xs font-normal text-amber-600 dark:text-amber-400 no-underline">
+                            {planNote}
+                          </span>
+                        )}
                       </span>
 
                       {/* Edit button (real sets only, not yet checked off) */}
@@ -442,7 +552,7 @@ export function ActiveWorkoutMode({
 
               <InlineAddSet
                 exerciseId={ex.id}
-                lastSet={setsAsc.length > 0 ? setsAsc[setsAsc.length - 1] : null}
+                lastSet={[...setsAsc].reverse().find(isCompletedSet) ?? (setsAsc.length > 0 ? setsAsc[setsAsc.length - 1] : null)}
                 setCount={setsAsc.length}
                 onAdded={(info) => handleSetAdded(ex.id, info)}
               />
