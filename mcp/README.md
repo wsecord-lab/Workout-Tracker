@@ -14,9 +14,34 @@ Talk to your locker-room data from **Cursor** or **Claude Desktop** using your e
 | `create_session_from_template` | Apply a template to a client |
 | `create_planned_session` | Create a new planned workout (AI-designed) |
 
+| `update_session` | Rename a workout, change its date or notes |
+| `update_set` | Change a planned set's weight / reps |
+| `add_exercise_to_session` | Add an exercise (and planned sets) to a workout |
+| `list_ai_changes` | See every AI edit with before/after values |
+| `undo_ai_change` | Revert one AI edit |
+
 Prompt: `plan_next_workout` — guided “build next session” flow.
 
-All tools are **scoped to one trainer** (your account). Writes only create sessions/plans; they never delete clients or history.
+Every connection acts as **one account**. A trainer key sees that trainer's clients; a client key sees only that client's own workouts. There is **no delete tool**.
+
+### Safeguards on AI writes
+- **Finished workouts are locked**, as are sets that were already performed. The AI can only touch upcoming/in-progress plans.
+- **Every change is logged** (`McpChange` table) with the before/after values.
+- **Undo** (`undo_ai_change`) reverts an edit, but refuses if the item was changed again since (so it never overwrites your own edits).
+- **Hourly limit:** 20 AI writes per account per hour (`MAX_WRITES_PER_HOUR` in `mcp/src/safeguards.ts`). Undo doesn't count.
+
+## Remote access (Claude web/mobile, ChatGPT, Grok…)
+
+The app serves the same tools over HTTPS at `POST /api/mcp`. Each caller sends `Authorization: Bearer wt_…`.
+
+```bash
+# create a key for an account (printed once — copy it immediately)
+npx tsx scripts/create-api-key.ts create someone@example.com "Claude on my phone"
+npx tsx scripts/create-api-key.ts list
+npx tsx scripts/create-api-key.ts revoke <keyId>
+```
+
+Run these against the database you want the key to work on (production keys must be created with the production `DATABASE_URL`). Only a hash of the key is stored; a lost key must be replaced.
 
 ## Setup
 

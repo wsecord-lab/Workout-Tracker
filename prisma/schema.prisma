@@ -38,6 +38,8 @@ model User {
   assignedClients   TrainerClient[]  @relation("AssignedClients")
   passwordResetTokens PasswordResetToken[]
   auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
+  mcpChanges    McpChange[]
 }
 
 model Account {
@@ -311,4 +313,43 @@ model WorkoutTemplateItem {
 
   @@index([templateId])
   @@unique([templateId, orderIndex])
+}
+
+// —— MCP (AI tool access) ———
+/// Secret key an AI app sends to reach the MCP endpoint. Only a SHA-256 hash is stored.
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  keyHash    String    @unique
+  /// First few characters of the key, so a key can be recognised without revealing it.
+  prefix     String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  changes    McpChange[]
+
+  @@index([userId])
+}
+
+/// Every write made through the MCP, with the value before and after, so it can be reviewed and undone.
+model McpChange {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeyId   String?
+  apiKey     ApiKey?   @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  tool       String
+  /// "session" | "set" | "exercise"
+  entityType String
+  entityId   String
+  sessionId  String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime  @default(now())
+  undoneAt   DateTime?
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
 }
