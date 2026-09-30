@@ -9,6 +9,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Unit tests mock Prisma; these values only satisfy getEnv() / prisma generate.
+env:
+  DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+  DIRECT_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+  AUTH_SECRET: ci-test-secret-not-for-production
+
 jobs:
   test:
     name: Vitest
