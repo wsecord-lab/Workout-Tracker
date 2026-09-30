@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node 20.x (pinned in `package.json` `engines`)
+- Node 24.x (pinned in `package.json` `engines`; also used by CI / `.nvmrc` / Dockerfile)
 - GitHub account
 - [Neon](https://neon.tech) account (free tier) or any Postgres provider
 
