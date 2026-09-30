@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node 20.x (pinned in `package.json` engines for Vercel)
+- Node 20.x (pinned in `package.json` `engines`)
 - GitHub account
 - [Neon](https://neon.tech) account (free tier) or any Postgres provider
 
@@ -12,39 +12,33 @@
 
 1. Go to [console.neon.tech](https://console.neon.tech)
 2. Create a project
-3. Copy **both** connection strings from Neon (or use one twice if you do not use pooling):
-   - **Pooled** → use as `DATABASE_URL` (recommended for Next.js serverless).
-   - **Direct** (non-pooled) → use as `DIRECT_URL` for Prisma migrations.
-4. Example hosts look like `ep-xxx.pooler.neon.tech` (pooled) vs `ep-xxx.us-east-2.aws.neon.tech` (direct).
+3. Copy **both** connection strings:
+   - **Pooled** → `DATABASE_URL` (recommended for Next.js serverless)
+   - **Direct** (non-pooled) → `DIRECT_URL` for Prisma migrations
+4. Hosts look like `ep-xxx.pooler.neon.tech` (pooled) vs `ep-xxx….aws.neon.tech` (direct)
 
-If `DATABASE_URL` points at a pooler (PgBouncer), `prisma migrate deploy` can fail with **P1002** while waiting for a Postgres advisory lock. Setting `DIRECT_URL` to the direct connection fixes that.
+If `DATABASE_URL` points at a pooler (PgBouncer), `prisma migrate deploy` can fail with **P1002** (advisory lock). Set `DIRECT_URL` to the direct connection to fix that.
 
 ---
 
 ## 2. Local setup and verification
 
 ```bash
-# Clone and install
 cd workout-tracker
 npm install
 
-# Create .env with DATABASE_URL and DIRECT_URL (see .env.example)
 cp .env.example .env
-# Edit .env: pooled Neon URL → DATABASE_URL; direct Neon URL → DIRECT_URL
+# Set DATABASE_URL, DIRECT_URL, AUTH_SECRET
 
-# Generate Prisma client
 npx prisma generate
-
-# Run migrations (creates tables)
 npx prisma migrate deploy
+npx prisma db seed   # optional sample data
 
-# Seed with sample data (optional)
-npx prisma db seed
-
-# Build and run locally
-npm run build
+npm run create:trainer   # create a trainer login if needed
 npm run dev
 ```
+
+Confirm you can sign in at `/login`, then optionally `npm run build` locally.
 
 ---
 
@@ -56,6 +50,8 @@ git commit -m "Configure for Vercel + Postgres"
 git push origin main
 ```
 
+CI (`.github/workflows/ci.yml`) runs Vitest and TypeScript `tsc --noEmit` on pushes/PRs.
+
 ---
 
 ## 4. Deploy to Vercel
@@ -64,50 +60,45 @@ git push origin main
 2. **Import** your `workout-tracker` repo
 3. Configure:
    - **Framework Preset:** Next.js
-   - **Build Command:** `npm run build` (default)
-   - **Install Command:** `npm install` (default)
+   - **Build Command:** `npm run vercel-build` (generate + migrate + `next build`; preferred over plain `npm run build`, which also seeds)
+   - **Install Command:** `npm install`
    - **Environment variables:**
-     - `DATABASE_URL` = Neon **pooled** connection string (runtime)
-     - `DIRECT_URL` = Neon **direct** connection string (migrations during build)
-     - (optional) `ACCESS_TOKEN` for the access gate
-4. Click **Deploy**
 
----
-
-## 5. Run migrations on production
-
-Migrations run automatically during the Vercel build (`npm run vercel-build`, which runs `prisma migrate deploy` before `next build`). Seed data is **not** applied on Vercel builds; run `npx prisma db seed` locally or against production when you need demo accounts.
-
-Or run migrations manually:
-
-```bash
-DATABASE_URL="your-pooled-url" DIRECT_URL="your-direct-url" npx prisma migrate deploy
-```
-
----
-
-## Environment variables for Vercel
-
-| Variable       | Required | Description                                                                 |
-|----------------|----------|-----------------------------------------------------------------------------|
-| `DATABASE_URL` | Yes      | PostgreSQL URL for the app (pooled Neon URL is OK).                         |
-| `DIRECT_URL`   | Yes\*    | Same DB over a **direct** (non-pooled) URL so migrations can take advisory locks. Use the same value as `DATABASE_URL` only when you are not behind PgBouncer. |
-| `ACCESS_TOKEN` | No       | Shared secret for access gate (see below)                                   |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | Postgres URL for the app (Neon pooled OK) |
+| `DIRECT_URL` | Yes\* | Direct (non-pooled) URL for migrations |
+| `AUTH_SECRET` | Yes | Auth.js secret (`openssl rand -base64 32`) |
+| `AUTH_URL` | Recommended | Public site URL, e.g. `https://your-app.vercel.app` |
 
 \*Required for Neon pooled setups; omitting it breaks `prisma migrate deploy` on Vercel with P1002.
 
+4. Click **Deploy**
+
+### Auth (required)
+
+Access is gated by **Auth.js** (credentials provider + JWT session cookie). Users must sign in at `/login`. Middleware redirects unauthenticated requests away from protected routes (`/`, `/clients`, `/dashboard`, `/charts`, `/settings`, `/manage-account`).
+
+Create at least one trainer (locally with `npm run create:trainer`, or via seed / DB) before relying on production login.
+
+### Obsolete: `ACCESS_TOKEN` access gate
+
+The old shared-secret gate (`ACCESS_TOKEN` + `x-access-token` header / `access_token` cookie) is **not used**. Do not set `ACCESS_TOKEN` expecting it to protect the app. Auth.js is the only access control.
+
+### Obsolete: Excel export
+
+There is **no** `/api/export/excel` route and no “Export to Excel” product feature. Session export that exists today is the Whoop-oriented `/api/export/whoop` path for specific clients.
+
 ---
 
-## Access control (optional)
+## 5. Migrations on production
 
-Set `ACCESS_TOKEN` in Vercel env vars. In production, requests must include:
+Migrations run during the Vercel build when using `npm run vercel-build` (`prisma migrate deploy` before `next build`). Seed data is **not** applied on Vercel builds; run `npx prisma db seed` against production only when you intentionally want demo data.
 
-- Header: `x-access-token: <value>`  
-- Or cookie: `access_token=<value>`
+Manual migrate:
 
-To set the cookie once in the browser console:
-```javascript
-document.cookie = "access_token=YOUR_TOKEN; path=/; max-age=31536000; SameSite=Lax";
+```bash
+DATABASE_URL="your-pooled-url" DIRECT_URL="your-direct-url" npx prisma migrate deploy
 ```
 
 ---
@@ -116,6 +107,6 @@ document.cookie = "access_token=YOUR_TOKEN; path=/; max-age=31536000; SameSite=L
 
 PostgreSQL backups are managed by your provider:
 
-- **Neon:** Point-in-time recovery, automatic backups on paid plans
-- **Supabase:** Daily backups
-- For `pg_dump` backup scripts, see your provider's docs
+- **Neon:** Point-in-time recovery / automatic backups (plan-dependent)
+- **Supabase:** Daily backups on supported plans
+- Local/scripted dumps: `npm run db:backup` (see `scripts/backup-db.ts`)

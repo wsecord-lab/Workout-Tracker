@@ -25,10 +25,10 @@ vi.mock("@/lib/db", () => ({
 }));
 
 async function loadAuthz() {
-  const { assertTrainerOwnsClient, assertClientAccess } = await import("./authz");
+  const { assertTrainerOwnsClient, assertClientAccess, requireUser } = await import("./authz");
   const { auth } = await import("@/auth");
   const { prisma } = await import("@/lib/db");
-  return { assertTrainerOwnsClient, assertClientAccess, auth, prisma };
+  return { assertTrainerOwnsClient, assertClientAccess, requireUser, auth, prisma };
 }
 
 describe("assertTrainerOwnsClient", () => {
@@ -95,5 +95,38 @@ describe("assertClientAccess", () => {
       .mockResolvedValueOnce({ userId: "user-client-A" })
       .mockResolvedValueOnce({ userId: "user-client-A" });
     await expect(assertClientAccess("client-1")).resolves.not.toThrow();
+  });
+});
+
+describe("requireUser mustChangePassword", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to change-password when mustChangePassword is set", async () => {
+    const { requireUser, auth } = await loadAuthz();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({
+      user: { id: "u1", role: "CLIENT", mustChangePassword: true },
+    });
+    await expect(requireUser()).rejects.toBe(REDIRECT_THROWN);
+  });
+
+  it("allows access when allowPasswordChange is true", async () => {
+    const { requireUser, auth } = await loadAuthz();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({
+      user: { id: "u1", role: "CLIENT", mustChangePassword: true },
+    });
+    await expect(requireUser({ allowPasswordChange: true })).resolves.toMatchObject({
+      id: "u1",
+      mustChangePassword: true,
+    });
+  });
+
+  it("does not redirect when mustChangePassword is false", async () => {
+    const { requireUser, auth } = await loadAuthz();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({
+      user: { id: "u1", role: "CLIENT", mustChangePassword: false },
+    });
+    await expect(requireUser()).resolves.toMatchObject({ id: "u1" });
   });
 });

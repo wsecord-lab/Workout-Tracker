@@ -7,6 +7,8 @@ declare module "next-auth" {
       role?: string;
       /** Linked Client profile id when role is CLIENT. */
       clientProfileId?: string | null;
+      /** True until the user replaces a trainer-set temporary password. */
+      mustChangePassword?: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -16,5 +18,6 @@ declare module "@auth/core/jwt" {
     id?: string;
     role?: string;
     clientProfileId?: string | null;
+    mustChangePassword?: boolean;
   }
 }

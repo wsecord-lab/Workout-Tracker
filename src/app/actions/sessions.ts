@@ -14,6 +14,7 @@ import {
   listRecentDistinctSessionNames,
 } from "@/lib/db/session-history";
 import { COMPLETED_SET_WHERE } from "@/lib/sets";
+import { materializeTemplateItems } from "@/lib/db/apply-workout-template";
 import { randomBytes } from "crypto";
 
 /** Session name is sanitized (HTML stripped, max length enforced) before storage. */
@@ -47,7 +48,7 @@ export type CreateSessionWithTemplateResult =
   | { ok: true }
   | { ok: false; error: string };
 
-/** Create a session and optionally pre-populate exercises from a template. Trainer-only when templateId is provided. */
+/** Create a session and optionally pre-populate exercises (and planned sets) from a template. Trainer-only when templateId is provided. */
 export async function createSessionWithTemplate(
   clientId: string,
   name?: string | null,
@@ -60,9 +61,9 @@ export async function createSessionWithTemplate(
     sessionDate = parseCalendarDateKeyToLocalNoon(String(calendarDateKey).trim()) ?? undefined;
   }
   if (templateId) {
-    await requireTrainer();
-    const template = await prisma.workoutTemplate.findUnique({
-      where: { id: templateId, isArchived: false },
+    const trainer = await requireTrainer();
+    const template = await prisma.workoutTemplate.findFirst({
+      where: { id: templateId, trainerId: trainer.id, isArchived: false },
       include: { items: { orderBy: { orderIndex: "asc" } } },
     });
     if (!template) return { ok: false, error: "Template not found" };
@@ -70,20 +71,16 @@ export async function createSessionWithTemplate(
       name != null && name.trim() !== ""
         ? sanitizeName(name, SESSION_NAME_MAX_LENGTH)
         : undefined;
-    const session = await prisma.workoutSession.create({
-      data: {
-        clientId,
-        name: sanitized || undefined,
-        normalizedName: normalizeSessionName(sanitized),
-        ...(sessionDate ? { date: sessionDate } : {}),
-      },
-    });
-    await prisma.exercise.createMany({
-      data: template.items.map((item, i) => ({
-        sessionId: session.id,
-        name: item.exerciseName,
-        orderIndex: i,
-      })),
+    await prisma.$transaction(async (tx) => {
+      const session = await tx.workoutSession.create({
+        data: {
+          clientId,
+          name: sanitized || undefined,
+          normalizedName: normalizeSessionName(sanitized),
+          ...(sessionDate ? { date: sessionDate } : {}),
+        },
+      });
+      await materializeTemplateItems(tx, session.id, template.items, 0);
     });
     await invalidateClientMetricsCache(clientId);
     revalidateClientWorkoutViews(clientId);
@@ -97,21 +94,21 @@ export type ApplyTemplateToSessionResult =
   | { ok: true }
   | { ok: false; error: string };
 
-/** Apply a template to an existing session: replace or append exercises. Trainer-only. */
+/** Apply a template to an existing session: replace or append exercises (+ planned sets). Trainer-only. */
 export async function applyTemplateToSession(
   sessionId: string,
   templateId: string,
   mode: "replace" | "append"
 ): Promise<ApplyTemplateToSessionResult> {
-  await requireTrainer();
+  const trainer = await requireTrainer();
   const session = await prisma.workoutSession.findUnique({
     where: { id: sessionId },
     include: { exercises: true },
   });
   if (!session) return { ok: false, error: "Session not found" };
   await assertClientAccess(session.clientId);
-  const template = await prisma.workoutTemplate.findUnique({
-    where: { id: templateId, isArchived: false },
+  const template = await prisma.workoutTemplate.findFirst({
+    where: { id: templateId, trainerId: trainer.id, isArchived: false },
     include: { items: { orderBy: { orderIndex: "asc" } } },
   });
   if (!template) return { ok: false, error: "Template not found" };
@@ -123,18 +120,14 @@ export async function applyTemplateToSession(
     .map((e) => e.orderIndex);
   const baseIndex =
     mode === "replace" ? 0 : liveIndices.length > 0 ? Math.max(...liveIndices) + 1 : 0;
-  if (mode === "replace") {
-    await prisma.exercise.updateMany({
-      where: { sessionId },
-      data: { deletedAt: new Date() },
-    });
-  }
-  await prisma.exercise.createMany({
-    data: template.items.map((item, i) => ({
-      sessionId: session.id,
-      name: item.exerciseName,
-      orderIndex: baseIndex + i,
-    })),
+  await prisma.$transaction(async (tx) => {
+    if (mode === "replace") {
+      await tx.exercise.updateMany({
+        where: { sessionId },
+        data: { deletedAt: new Date() },
+      });
+    }
+    await materializeTemplateItems(tx, session.id, template.items, baseIndex);
   });
   await invalidateClientMetricsCache(session.clientId);
   revalidateClientWorkoutViews(session.clientId);
@@ -396,8 +389,10 @@ export async function updateSessionNotes(
 }
 
 /**
- * Start the clock. Idempotent: re-entering workout mode after backgrounding the
- * app must not restart the timer, so startedAt is only written when unset.
+ * Start or resume the clock.
+ * - Fresh session: stamps startedAt.
+ * - Paused session: folds the open pause window into totalPausedSeconds and clears pausedAt.
+ * - Already running: no-op (idempotent — must not restart the timer).
  */
 export async function startSession(
   sessionId: string,
@@ -406,15 +401,69 @@ export async function startSession(
   await assertClientAccess(clientId);
   const session = await prisma.workoutSession.findUnique({
     where: { id: sessionId },
-    select: { startedAt: true, clientId: true },
+    select: {
+      startedAt: true,
+      finishedAt: true,
+      pausedAt: true,
+      totalPausedSeconds: true,
+      clientId: true,
+    },
   });
   if (!session || session.clientId !== clientId) return { ok: false, error: "Session not found" };
-  if (session.startedAt) return { ok: true, startedAt: session.startedAt.toISOString() };
+  if (session.finishedAt) return { ok: false, error: "Session already finished" };
 
-  const startedAt = new Date();
-  await prisma.workoutSession.update({ where: { id: sessionId }, data: { startedAt } });
+  if (!session.startedAt) {
+    const startedAt = new Date();
+    await prisma.workoutSession.update({
+      where: { id: sessionId },
+      data: { startedAt, pausedAt: null },
+    });
+    revalidateClientWorkoutViews(clientId);
+    return { ok: true, startedAt: startedAt.toISOString() };
+  }
+
+  if (session.pausedAt) {
+    const pauseSeconds = Math.max(
+      0,
+      Math.round((Date.now() - session.pausedAt.getTime()) / 1000)
+    );
+    await prisma.workoutSession.update({
+      where: { id: sessionId },
+      data: {
+        pausedAt: null,
+        totalPausedSeconds: session.totalPausedSeconds + pauseSeconds,
+      },
+    });
+    revalidateClientWorkoutViews(clientId);
+  }
+
+  return { ok: true, startedAt: session.startedAt.toISOString() };
+}
+
+/**
+ * Leave active workout mode without finishing. Freezes duration accounting via
+ * pausedAt; rest timer is cleared client-side so it does not keep counting.
+ */
+export async function pauseSession(
+  sessionId: string,
+  clientId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await assertClientAccess(clientId);
+  const session = await prisma.workoutSession.findUnique({
+    where: { id: sessionId },
+    select: { startedAt: true, finishedAt: true, pausedAt: true, clientId: true },
+  });
+  if (!session || session.clientId !== clientId) return { ok: false, error: "Session not found" };
+  if (!session.startedAt) return { ok: false, error: "Session has not started" };
+  if (session.finishedAt) return { ok: false, error: "Session already finished" };
+  if (session.pausedAt) return { ok: true };
+
+  await prisma.workoutSession.update({
+    where: { id: sessionId },
+    data: { pausedAt: new Date() },
+  });
   revalidateClientWorkoutViews(clientId);
-  return { ok: true, startedAt: startedAt.toISOString() };
+  return { ok: true };
 }
 
 export async function markSessionFinished(sessionId: string, clientId: string): Promise<void> {
@@ -422,9 +471,25 @@ export async function markSessionFinished(sessionId: string, clientId: string): 
   // Deliberately does not backfill startedAt when it's null: a fabricated start
   // equal to the finish would render a confident, wrong "0 min". Better to show
   // "—" and let someone type the real number.
+  const session = await prisma.workoutSession.findUnique({
+    where: { id: sessionId },
+    select: { pausedAt: true, totalPausedSeconds: true },
+  });
+  const now = new Date();
+  let totalPausedSeconds = session?.totalPausedSeconds ?? 0;
+  if (session?.pausedAt) {
+    totalPausedSeconds += Math.max(
+      0,
+      Math.round((now.getTime() - session.pausedAt.getTime()) / 1000)
+    );
+  }
   await prisma.workoutSession.update({
     where: { id: sessionId },
-    data: { finishedAt: new Date() },
+    data: {
+      finishedAt: now,
+      pausedAt: null,
+      totalPausedSeconds,
+    },
   });
   await invalidateClientMetricsCache(clientId);
   revalidateClientWorkoutViews(clientId);

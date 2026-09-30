@@ -13,6 +13,7 @@ declare module "next-auth" {
       image?: string | null;
       role: Role;
       clientProfileId?: string | null;
+      mustChangePassword?: boolean;
     };
   }
 }
@@ -59,6 +60,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           image: user.image,
           role: user.role,
           clientProfileId,
+          mustChangePassword: user.mustChangePassword,
         };
       },
     }),
@@ -68,9 +70,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         (token as { role?: Role }).role = (user as { role?: Role }).role;
-        const u = user as { clientProfileId?: string | null };
+        const u = user as {
+          clientProfileId?: string | null;
+          mustChangePassword?: boolean;
+        };
         if (u.clientProfileId !== undefined) {
           token.clientProfileId = u.clientProfileId;
+        }
+        if (u.mustChangePassword !== undefined) {
+          (token as { mustChangePassword?: boolean }).mustChangePassword =
+            u.mustChangePassword;
         }
       }
       return token;
@@ -82,6 +91,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         let clientProfileId: string | null =
           (token.clientProfileId as string | null | undefined) ?? null;
+        let mustChangePassword =
+          (token as { mustChangePassword?: boolean }).mustChangePassword ?? false;
+
+        // Refresh flags from DB so password-change clears without requiring re-login.
+        const dbUser = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { mustChangePassword: true },
+        });
+        if (dbUser) {
+          mustChangePassword = dbUser.mustChangePassword;
+        }
+
         if (session.user.role === "CLIENT" && !clientProfileId) {
           const profile = await prisma.client.findFirst({
             where: { userId: session.user.id },
@@ -90,6 +111,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           clientProfileId = profile?.id ?? null;
         }
         session.user.clientProfileId = clientProfileId;
+        session.user.mustChangePassword = mustChangePassword;
       }
       return session;
     },

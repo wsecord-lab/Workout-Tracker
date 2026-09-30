@@ -46,6 +46,17 @@ describe("getSessionDurationSeconds", () => {
       })
     ).toBe(3120);
   });
+
+  it("subtracts accumulated pause time from derived duration", () => {
+    expect(
+      getSessionDurationSeconds({
+        startedAt: start,
+        finishedAt: finish,
+        durationSeconds: null,
+        totalPausedSeconds: 600,
+      })
+    ).toBe(2520);
+  });
 });
 
 describe("getElapsedSeconds", () => {
@@ -54,6 +65,17 @@ describe("getElapsedSeconds", () => {
   });
   it("floors at 0 for a start in the future", () => {
     expect(getElapsedSeconds(finish, start)).toBe(0);
+  });
+  it("subtracts completed pause windows", () => {
+    expect(
+      getElapsedSeconds(start, new Date("2026-07-01T10:12:30Z"), { totalPausedSeconds: 150 })
+    ).toBe(600);
+  });
+  it("freezes during an open pause window", () => {
+    const pausedAt = new Date("2026-07-01T10:10:00Z");
+    const now = new Date("2026-07-01T10:20:00Z");
+    // 20 min wall − 10 min open pause = 10 min under workout
+    expect(getElapsedSeconds(start, now, { pausedAt, totalPausedSeconds: 0 })).toBe(600);
   });
 });
 

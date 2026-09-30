@@ -38,6 +38,8 @@ export function ExerciseRow({
   sessionId,
   onGroupChange,
   isClient = false,
+  /** When false (finished session), hide remove. Clients and trainers can remove otherwise. */
+  canRemoveExercise = true,
   dragHandle,
 }: {
   exercise: ExerciseWithSets;
@@ -51,6 +53,7 @@ export function ExerciseRow({
   sessionId?: string;
   onGroupChange?: () => void;
   isClient?: boolean;
+  canRemoveExercise?: boolean;
   /** Omitted in read-only contexts (e.g. the drag overlay preview). */
   dragHandle?: DragHandleProps;
 }) {
@@ -363,7 +366,7 @@ export function ExerciseRow({
                 )}
             </>
           )}
-          {!isClient && (
+          {canRemoveExercise && (
             <DeleteExerciseButton
               exerciseId={exercise.id}
               exerciseName={exercise.name}

@@ -87,6 +87,8 @@ export function SessionBlock({
   // Derived from the server, not localStorage: a workout started on a phone must
   // read as in-progress on the trainer's laptop too.
   const isInProgress = session.startedAt != null && session.finishedAt == null;
+  const isPaused = isInProgress && session.pausedAt != null;
+  const canRemoveExercise = session.finishedAt == null;
 
   function handleStartWorkout() {
     startStartTransition(async () => {
@@ -94,6 +96,11 @@ export function SessionBlock({
       setWorkoutActive(true);
       router.refresh();
     });
+  }
+
+  function handlePauseWorkout() {
+    setWorkoutActive(false);
+    router.refresh();
   }
 
   useEffect(() => {
@@ -394,6 +401,10 @@ export function SessionBlock({
             <span className="shrink-0 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400 whitespace-nowrap">
               ✓ Finished
             </span>
+          ) : isPaused ? (
+            <span className="shrink-0 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
+              ⏸ Paused
+            </span>
           ) : isInProgress ? (
             <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-nowrap">
               ● In Progress
@@ -539,7 +550,13 @@ export function SessionBlock({
                 disabled={startPending}
                 className="btn-primary text-sm py-1.5 px-4 gap-1.5 font-semibold disabled:opacity-50"
               >
-                {startPending ? "…" : isInProgress ? "⏵ Resume Workout" : "▶ Start Workout"}
+                {startPending
+                  ? "…"
+                  : isPaused
+                    ? "⏵ Continue Workout"
+                    : isInProgress
+                      ? "⏵ Resume Workout"
+                      : "▶ Start Workout"}
               </button>
             )}
             {session.exercises.length > 0 && (
@@ -609,6 +626,7 @@ export function SessionBlock({
                 sessionId={session.id}
                 onGroupChange={() => router.refresh()}
                 isClient={isClient}
+                canRemoveExercise={canRemoveExercise}
                 dragHandle={handle}
               />
             )}
@@ -620,6 +638,7 @@ export function SessionBlock({
                   onToggle={() => {}}
                   groupPresentation={groupPresentation.byExerciseId.get(exercise.id)}
                   isClient={isClient}
+                  canRemoveExercise={false}
                 />
               </div>
             )}
@@ -659,7 +678,8 @@ export function SessionBlock({
           sessionId={session.id}
           clientId={session.clientId}
           startedAt={session.startedAt}
-          onExit={() => { setWorkoutActive(false); router.refresh(); }}
+          totalPausedSeconds={session.totalPausedSeconds ?? 0}
+          onPause={handlePauseWorkout}
           onFinish={() => { setWorkoutActive(false); router.refresh(); }}
         />
       )}

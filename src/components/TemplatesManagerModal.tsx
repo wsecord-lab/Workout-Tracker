@@ -10,6 +10,7 @@ import {
 import { useTemplates } from "@/hooks/useTemplates";
 import type { TemplateWithItems } from "@/app/actions/templates";
 import { useToast } from "@/components/ui/toast/use-toast";
+import { toDisplay } from "@/lib/units";
 
 const MODAL_Z = 1002;
 const NAME_MIN = 2;
@@ -17,10 +18,44 @@ const NAME_MAX = 60;
 
 type View = "list" | "create" | "edit";
 
+type DraftItem = {
+  exerciseName: string;
+  plannedSetCount: string;
+  plannedReps: string;
+  plannedWeightLb: string;
+};
+
 type Props = {
   isOpen: boolean;
   onClose: () => void;
 };
+
+function emptyDraft(name: string): DraftItem {
+  return {
+    exerciseName: name,
+    plannedSetCount: "3",
+    plannedReps: "",
+    plannedWeightLb: "",
+  };
+}
+
+function draftToPayload(items: DraftItem[]) {
+  return items.map((item, orderIndex) => {
+    const hasPlan =
+      item.plannedReps.trim() !== "" && item.plannedWeightLb.trim() !== "";
+    return {
+      exerciseName: item.exerciseName,
+      orderIndex,
+      ...(hasPlan
+        ? {
+            plannedSetCount: parseInt(item.plannedSetCount, 10) || 3,
+            plannedReps: item.plannedReps.trim(),
+            plannedWeightLb: item.plannedWeightLb.trim(),
+          }
+        : {}),
+    };
+  });
+}
 
 export function TemplatesManagerModal({ isOpen, onClose }: Props) {
   const { data: session } = useSession();
@@ -33,7 +68,6 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
     createTemplate,
     updateTemplate,
     archiveTemplate,
-    refresh,
   } = useTemplates(false);
 
   const [catalog, setCatalog] = useState<TrainerCatalogItem[]>([]);
@@ -41,7 +75,7 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, setIsPending] = useState(false);
   const { addToast } = useToast();
@@ -74,7 +108,7 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
 
   const resetForm = useCallback(() => {
     setName("");
-    setSelectedNames([]);
+    setDraftItems([]);
     setErrors({});
     setEditingId(null);
     setView("list");
@@ -88,12 +122,15 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
       setErrors({ name: `Name must be ${NAME_MIN}–${NAME_MAX} characters` });
       return;
     }
-    if (selectedNames.length < 1 || selectedNames.length > 50) {
+    if (draftItems.length < 1 || draftItems.length > 50) {
       setErrors({ items: "Template must have 1–50 exercises" });
       return;
     }
     setIsPending(true);
-    const result = await createTemplate({ name: trimmed, exerciseNames: selectedNames });
+    const result = await createTemplate({
+      name: trimmed,
+      items: draftToPayload(draftItems),
+    });
     setIsPending(false);
     if (result.ok) {
       addToast("success", "Template created.");
@@ -113,17 +150,14 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
       setErrors({ name: `Name must be ${NAME_MIN}–${NAME_MAX} characters` });
       return;
     }
-    if (selectedNames.length < 1 || selectedNames.length > 50) {
+    if (draftItems.length < 1 || draftItems.length > 50) {
       setErrors({ items: "Template must have 1–50 exercises" });
       return;
     }
     setIsPending(true);
     const result = await updateTemplate(editingId, {
       name: trimmed,
-      items: selectedNames.map((exerciseName, orderIndex) => ({
-        exerciseName,
-        orderIndex,
-      })),
+      items: draftToPayload(draftItems),
     });
     setIsPending(false);
     if (result.ok) {
@@ -148,7 +182,18 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
   const startEdit = (t: TemplateWithItems) => {
     setEditingId(t.id);
     setName(t.name);
-    setSelectedNames(t.items.map((i) => i.exerciseName));
+    setDraftItems(
+      t.items.map((i) => ({
+        exerciseName: i.exerciseName,
+        plannedSetCount:
+          i.plannedSetCount != null ? String(i.plannedSetCount) : "3",
+        plannedReps: i.plannedReps != null ? String(i.plannedReps) : "",
+        plannedWeightLb:
+          i.plannedWeightKg != null
+            ? String(toDisplay(i.plannedWeightKg, "weight"))
+            : "",
+      }))
+    );
     setView("edit");
     setErrors({});
   };
@@ -205,35 +250,43 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
               </p>
             ) : (
               <ul className="space-y-2 mb-4">
-                {filteredTemplates.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-border last:border-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-[var(--text)] truncate">{t.name}</p>
-                      <p className="text-xs text-muted">
-                        {t.items.length} exercise{t.items.length !== 1 ? "s" : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(t)}
-                        className="text-sm text-primary hover:underline outline-none focus:ring-2 focus:ring-primary rounded"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleArchive(t)}
-                        className="text-sm text-error hover:underline outline-none focus:ring-2 focus:ring-primary rounded"
-                      >
-                        Archive
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {filteredTemplates.map((t) => {
+                  const plannedCount = t.items.filter(
+                    (i) => i.plannedSetCount != null && i.plannedSetCount > 0
+                  ).length;
+                  return (
+                    <li
+                      key={t.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-border last:border-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-[var(--text)] truncate">{t.name}</p>
+                        <p className="text-xs text-muted">
+                          {t.items.length} exercise{t.items.length !== 1 ? "s" : ""}
+                          {plannedCount > 0
+                            ? ` · ${plannedCount} with planned sets`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(t)}
+                          className="text-sm text-primary hover:underline outline-none focus:ring-2 focus:ring-primary rounded"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleArchive(t)}
+                          className="text-sm text-error hover:underline outline-none focus:ring-2 focus:ring-primary rounded"
+                        >
+                          Archive
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <button
@@ -241,7 +294,7 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
               onClick={() => {
                 setView("create");
                 setName("");
-                setSelectedNames([]);
+                setDraftItems([]);
                 setErrors({});
               }}
               className="btn-primary text-sm py-1.5"
@@ -290,21 +343,23 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
                 Exercises (in order)
               </label>
               <p className="text-xs text-muted mb-2">
-                Add from your exercise list, then reorder with the arrows.
+                Add from your exercise list. Optionally plan sets (same as Plan Sets on a session).
               </p>
               <AddExerciseSelect
                 catalog={catalog}
-                selectedNames={selectedNames}
+                draftItems={draftItems}
                 onAdd={(n) =>
-                  setSelectedNames((prev) =>
-                    prev.includes(n) ? prev : [...prev, n]
+                  setDraftItems((prev) =>
+                    prev.some((x) => x.exerciseName === n)
+                      ? prev
+                      : [...prev, emptyDraft(n)]
                   )
                 }
                 onRemove={(n) =>
-                  setSelectedNames((prev) => prev.filter((x) => x !== n))
+                  setDraftItems((prev) => prev.filter((x) => x.exerciseName !== n))
                 }
                 onMoveUp={(i) =>
-                  setSelectedNames((prev) => {
+                  setDraftItems((prev) => {
                     if (i <= 0) return prev;
                     const next = [...prev];
                     [next[i - 1], next[i]] = [next[i], next[i - 1]];
@@ -312,12 +367,17 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
                   })
                 }
                 onMoveDown={(i) =>
-                  setSelectedNames((prev) => {
+                  setDraftItems((prev) => {
                     if (i >= prev.length - 1) return prev;
                     const next = [...prev];
                     [next[i], next[i + 1]] = [next[i + 1], next[i]];
                     return next;
                   })
+                }
+                onChangeItem={(i, patch) =>
+                  setDraftItems((prev) =>
+                    prev.map((item, idx) => (idx === i ? { ...item, ...patch } : item))
+                  )
                 }
                 disabled={isPending}
               />
@@ -331,7 +391,7 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
-                disabled={isPending || selectedNames.length === 0}
+                disabled={isPending || draftItems.length === 0}
                 className="btn-primary text-sm py-1.5"
               >
                 {isPending ? "Saving…" : view === "create" ? "Create" : "Save"}
@@ -358,22 +418,25 @@ export function TemplatesManagerModal({ isOpen, onClose }: Props) {
 
 function AddExerciseSelect({
   catalog,
-  selectedNames,
+  draftItems,
   onAdd,
   onRemove,
   onMoveUp,
   onMoveDown,
+  onChangeItem,
   disabled,
 }: {
   catalog: TrainerCatalogItem[];
-  selectedNames: string[];
+  draftItems: DraftItem[];
   onAdd: (name: string) => void;
   onRemove: (name: string) => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
+  onChangeItem: (index: number, patch: Partial<DraftItem>) => void;
   disabled?: boolean;
 }) {
   const [selectValue, setSelectValue] = useState("");
+  const selectedNames = draftItems.map((d) => d.exerciseName);
   const available = catalog.filter((c) => !selectedNames.includes(c.name));
 
   return (
@@ -400,47 +463,127 @@ function AddExerciseSelect({
           ))}
         </select>
       )}
-      {selectedNames.length === 0 ? (
+      {draftItems.length === 0 ? (
         <p className="text-sm text-muted">No exercises added yet.</p>
       ) : (
-        <ul className="space-y-1 border border-border rounded p-2 bg-background/50">
-          {selectedNames.map((name, i) => (
+        <ul className="space-y-2 border border-border rounded p-2 bg-background/50">
+          {draftItems.map((item, i) => (
             <li
-              key={`${name}-${i}`}
-              className="flex items-center justify-between gap-2 py-1 text-sm"
+              key={`${item.exerciseName}-${i}`}
+              className="space-y-1.5 py-1 text-sm border-b border-border last:border-0 last:pb-0"
             >
-              <span className="min-w-0 truncate text-[var(--text)]">
-                {i + 1}. {name}
-              </span>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onMoveUp(i)}
-                  disabled={disabled || i === 0}
-                  className="p-1 text-muted hover:text-[var(--text)] disabled:opacity-40 rounded"
-                  aria-label="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onMoveDown(i)}
-                  disabled={disabled || i === selectedNames.length - 1}
-                  className="p-1 text-muted hover:text-[var(--text)] disabled:opacity-40 rounded"
-                  aria-label="Move down"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemove(name)}
-                  disabled={disabled}
-                  className="p-1 text-error hover:underline rounded"
-                  aria-label={`Remove ${name}`}
-                >
-                  Remove
-                </button>
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-[var(--text)] font-medium">
+                  {i + 1}. {item.exerciseName}
+                </span>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onMoveUp(i)}
+                    disabled={disabled || i === 0}
+                    className="p-1 text-muted hover:text-[var(--text)] disabled:opacity-40 rounded"
+                    aria-label="Move up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMoveDown(i)}
+                    disabled={disabled || i === draftItems.length - 1}
+                    className="p-1 text-muted hover:text-[var(--text)] disabled:opacity-40 rounded"
+                    aria-label="Move down"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(item.exerciseName)}
+                    disabled={disabled}
+                    className="p-1 text-error hover:underline rounded"
+                    aria-label={`Remove ${item.exerciseName}`}
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
+              <div className="flex flex-wrap items-end gap-1.5">
+                <div>
+                  <label
+                    htmlFor={`tpl-sets-${i}`}
+                    className="block text-[10px] text-muted"
+                  >
+                    Sets
+                  </label>
+                  <input
+                    id={`tpl-sets-${i}`}
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={item.plannedSetCount}
+                    onChange={(e) =>
+                      onChangeItem(i, { plannedSetCount: e.target.value })
+                    }
+                    className="input w-14 px-1 py-0.5 text-xs min-h-[36px] sm:min-h-0"
+                    disabled={disabled}
+                  />
+                </div>
+                <span className="pb-1.5 text-muted text-xs">×</span>
+                <div>
+                  <label
+                    htmlFor={`tpl-reps-${i}`}
+                    className="block text-[10px] text-muted"
+                  >
+                    Reps
+                  </label>
+                  <input
+                    id={`tpl-reps-${i}`}
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={item.plannedReps}
+                    onChange={(e) =>
+                      onChangeItem(i, { plannedReps: e.target.value })
+                    }
+                    placeholder="—"
+                    className="input w-14 px-1 py-0.5 text-xs min-h-[36px] sm:min-h-0"
+                    disabled={disabled}
+                  />
+                </div>
+                <span className="pb-1.5 text-muted text-xs">@</span>
+                <div>
+                  <label
+                    htmlFor={`tpl-wt-${i}`}
+                    className="block text-[10px] text-muted"
+                  >
+                    Weight (lb)
+                  </label>
+                  <input
+                    id={`tpl-wt-${i}`}
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={item.plannedWeightLb}
+                    onChange={(e) =>
+                      onChangeItem(i, { plannedWeightLb: e.target.value })
+                    }
+                    placeholder="—"
+                    className="input w-16 px-1 py-0.5 text-xs min-h-[36px] sm:min-h-0"
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+              {item.plannedReps.trim() && item.plannedWeightLb.trim() ? (
+                <p className="text-[10px] text-muted">
+                  Will apply as{" "}
+                  {item.plannedSetCount || "3"}×{item.plannedReps.trim()} @{" "}
+                  {item.plannedWeightLb.trim()} lb
+                </p>
+              ) : (
+                <p className="text-[10px] text-muted">
+                  Leave reps/weight blank for exercise name only
+                </p>
+              )}
             </li>
           ))}
         </ul>

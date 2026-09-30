@@ -11,6 +11,7 @@ import { AddSessionButton } from "@/app/clients/[id]/AddSessionButton";
 import { AddBiometricsButton } from "@/app/clients/[id]/AddBiometricsButton";
 import { SessionBlock } from "@/app/clients/[id]/SessionBlock";
 import { LoadMoreSessions } from "@/app/clients/[id]/LoadMoreSessions";
+import { ClientSessionsEmptyState } from "@/app/clients/[id]/ClientSessionsEmptyState";
 
 export default async function ClientDetailPage({
   params,
@@ -99,7 +100,7 @@ export default async function ClientDetailPage({
       </div>
       <div className="space-y-8">
         {sessions.length === 0 ? (
-          <p className="text-muted">No sessions yet. Add a session to get started.</p>
+          <ClientSessionsEmptyState isClient={isClient} />
         ) : (
           <>
             {sessions.map((session) => (

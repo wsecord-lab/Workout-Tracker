@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lifesport-workouts": {
+      "command": "npx",
+      "args": ["tsx", "mcp/src/index.ts"],
+      "env": {}
+    }
+  }
+}

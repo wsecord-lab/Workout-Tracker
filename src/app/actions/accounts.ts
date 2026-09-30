@@ -9,6 +9,7 @@ import {
   verifyPassword,
   validateNewPassword,
 } from "@/lib/passwords";
+import { hashPasswordResetToken } from "@/lib/password-reset-token";
 import { validateClient } from "@/lib/validations";
 import { Role } from "@prisma/client";
 
@@ -28,9 +29,16 @@ export type ChangePasswordResult =
   | { ok: true }
   | { ok: false; errors: Record<string, string> };
 
+export type RequestPasswordResetResult = { ok: true };
+
+export type ResetPasswordResult =
+  | { ok: true }
+  | { ok: false; errors: Record<string, string> };
+
 /**
  * Trainer-only: Create a client login (User with role CLIENT) and link to an existing
  * Client or create a new Client. No SMTP; trainer sets temp password.
+ * New/updated credentials require a password change on next sign-in (mustChangePassword).
  */
 export async function createClientLoginAndLink(
   formData: FormData
@@ -69,33 +77,41 @@ export async function createClientLoginAndLink(
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
+  const passwordHash = await hashPassword(tempPassword);
+
   // Find or create User (CLIENT) — username stored in email column
   let user = await prisma.user.findUnique({ where: { email: username } });
   if (user) {
     if (user.role === TRAINER) {
       return { ok: false, errors: { username: "Username already used by trainer account." } };
     }
-    // existing CLIENT user — will link below
+    // Enforce 1:1 before applying a new temp password
+    const existingLink = await prisma.client.findFirst({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    if (existingLink) {
+      return {
+        ok: false,
+        errors: { _: "This user is already linked to a client." },
+      };
+    }
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+      },
+    });
   } else {
     user = await prisma.user.create({
       data: {
         email: username,
-        passwordHash: await hashPassword(tempPassword),
+        passwordHash,
         role: CLIENT,
+        mustChangePassword: true,
       },
     });
-  }
-
-  // Enforce 1:1: one User (CLIENT) -> at most one Client
-  const existingLink = await prisma.client.findFirst({
-    where: { userId: user.id },
-    select: { id: true },
-  });
-  if (existingLink) {
-    return {
-      ok: false,
-      errors: { _: "This user is already linked to a client." },
-    };
   }
 
   let clientId: string;
@@ -171,6 +187,7 @@ export async function createClientLoginAndLink(
 
 /**
  * Change current user's password. Works for both TRAINER and CLIENT.
+ * Clears mustChangePassword after a successful change.
  */
 export async function changeMyPassword(
   formData: FormData
@@ -205,12 +222,71 @@ export async function changeMyPassword(
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: await hashPassword(newPassword) },
+    data: {
+      passwordHash: await hashPassword(newPassword),
+      mustChangePassword: false,
+    },
   });
 
   revalidatePath("/");
   revalidatePath("/manage-account");
   revalidatePath("/manage-account/change-password");
+  return { ok: true };
+}
+
+/**
+ * Acknowledge a forgot-password request without revealing whether the username exists.
+ * No SMTP in this app — clients should ask their trainer for a temporary password.
+ * Token-based resets use createPasswordResetTokenForUser + resetPasswordWithToken.
+ */
+export async function requestPasswordReset(
+  _formData: FormData
+): Promise<RequestPasswordResetResult> {
+  return { ok: true };
+}
+
+/**
+ * Reset password using a one-time PasswordResetToken. Clears mustChangePassword.
+ */
+export async function resetPasswordWithToken(
+  formData: FormData
+): Promise<ResetPasswordResult> {
+  const errors: Record<string, string> = {};
+  const token = String(formData.get("token") ?? "").trim();
+  const newPassword = String(formData.get("newPassword") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (!token) errors.token = "Reset link is invalid or expired.";
+  const newPwError = validateNewPassword(newPassword);
+  if (newPwError) errors.newPassword = newPwError;
+  if (newPassword !== confirmPassword) {
+    errors.confirmPassword = "New password and confirmation do not match.";
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  const tokenHash = hashPasswordResetToken(token);
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { token: tokenHash },
+    select: { id: true, userId: true, expiresAt: true, used: true },
+  });
+  if (!record || record.used || record.expiresAt.getTime() < Date.now()) {
+    return { ok: false, errors: { token: "Reset link is invalid or expired." } };
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash: await hashPassword(newPassword),
+        mustChangePassword: false,
+      },
+    }),
+    prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { used: true },
+    }),
+  ]);
+
   return { ok: true };
 }
 

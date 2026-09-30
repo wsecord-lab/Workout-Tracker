@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseRange, aggregateMetrics, type MetricsSession } from "./metrics";
+import { formatVolumeKgReps, findExerciseMetrics, isMetricsRangeKey } from "./metrics-shared";
 
 describe("parseRange", () => {
   it("returns 7 for 7d", () => {
@@ -17,6 +18,14 @@ describe("parseRange", () => {
     expect(parseRange(null)).toBeNull();
     expect(parseRange("14d")).toBeNull();
     expect(parseRange("week")).toBeNull();
+  });
+});
+
+describe("isMetricsRangeKey", () => {
+  it("accepts only 7d / 30d / 90d", () => {
+    expect(isMetricsRangeKey("7d")).toBe(true);
+    expect(isMetricsRangeKey("30D")).toBe(true);
+    expect(isMetricsRangeKey("14d")).toBe(false);
   });
 });
 
@@ -54,5 +63,19 @@ describe("aggregateMetrics", () => {
     const result = aggregateMetrics([session([{ weightKg: 200, reps: 5, completedAt: null }])]);
     expect(result.totalVolumeKgReps).toBe(0);
     expect(result.exercises).toEqual([]);
+  });
+
+  it("exposes PR fields charts can surface as callouts", () => {
+    const result = aggregateMetrics([
+      session([
+        { weightKg: 100, reps: 5, completedAt: date },
+        { weightKg: 90, reps: 8, completedAt: date },
+      ]),
+    ]);
+    const bench = findExerciseMetrics(result, "Bench Press");
+    expect(bench).not.toBeNull();
+    expect(bench!.bestWeightKg).toBe(100);
+    expect(bench!.bestVolumeKgReps).toBe(720); // 90×8
+    expect(formatVolumeKgReps(result.totalVolumeKgReps)).toMatch(/lb·reps$/);
   });
 });

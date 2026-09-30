@@ -47,7 +47,12 @@ export async function getDurationStatsForName(params: {
     where: { clientId: params.clientId, normalizedName: params.normalizedName },
     orderBy: { date: "desc" },
     take: params.limit ?? DURATION_SAMPLE_LIMIT,
-    select: { startedAt: true, finishedAt: true, durationSeconds: true },
+    select: {
+      startedAt: true,
+      finishedAt: true,
+      durationSeconds: true,
+      totalPausedSeconds: true,
+    },
   });
 
   const durations = sessions
@@ -93,6 +98,7 @@ export async function listRecentDistinctSessionNames(params: {
       startedAt: true,
       finishedAt: true,
       durationSeconds: true,
+      totalPausedSeconds: true,
       exercises: {
         where: { deletedAt: null },
         select: { _count: { select: { sets: { where: COMPLETED_SET_WHERE } } } },

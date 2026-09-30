@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { updateClient } from "@/app/actions/clients";
-import { deleteClient } from "@/app/actions/clients";
 import { ClientForm } from "@/app/clients/ClientForm";
 import { DeleteClientButton } from "@/app/clients/DeleteClientButton";
 import { LinkClientAccount } from "@/app/clients/[id]/LinkClientAccount";
@@ -56,9 +55,11 @@ export default async function EditClientPage({
       {user.role === "TRAINER" && (
         <LinkClientAccount clientId={id} />
       )}
-      <div className="mt-6">
-        <DeleteClientButton clientId={id} clientName={client.name} />
-      </div>
+      {user.role === "TRAINER" && (
+        <div className="mt-6">
+          <DeleteClientButton clientId={id} clientName={client.name} />
+        </div>
+      )}
     </div>
   );
 }

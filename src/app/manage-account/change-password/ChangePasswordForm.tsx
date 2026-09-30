@@ -24,7 +24,12 @@ function validateConfirm(confirm: string, newPw: string): string | null {
   return null;
 }
 
-export function ChangePasswordForm() {
+type Props = {
+  /** When true, redirect to post-login home after a successful change. */
+  forced?: boolean;
+};
+
+export function ChangePasswordForm({ forced = false }: Props) {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -98,6 +103,10 @@ export function ChangePasswordForm() {
         setMessage({ type: "success", text: "Password changed successfully." });
         setErrors({});
         form.reset();
+        if (forced) {
+          window.location.href = "/auth/redirect";
+          return;
+        }
       } else {
         const serverErrors = result.errors;
         setErrors(serverErrors);

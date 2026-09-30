@@ -226,6 +226,8 @@ const TEMPLATE_NAME_MIN = 2;
 const TEMPLATE_NAME_MAX = 60;
 const TEMPLATE_ITEMS_MIN = 1;
 const TEMPLATE_ITEMS_MAX = 50;
+const TEMPLATE_PLANNED_SETS_MIN = 1;
+const TEMPLATE_PLANNED_SETS_MAX = 10;
 
 /** Normalize exercise name: trim, collapse spaces, lowercase (for storage/comparison). */
 export function normalizeExerciseName(raw: string): string {
@@ -243,42 +245,161 @@ export function templateExerciseDisplayName(raw: string): string {
 
 export type TemplateFormErrors = { name?: string; items?: string; _?: string };
 
-export type TemplateItemInput = { exerciseName: string; orderIndex: number };
+export type TemplateItemValidated = {
+  exerciseName: string;
+  normalizedName: string;
+  orderIndex: number;
+  plannedSetCount: number | null;
+  plannedWeightKg: number | null;
+  plannedReps: number | null;
+};
+
+export type TemplateItemInput = {
+  exerciseName: string;
+  orderIndex: number;
+  plannedSetCount?: number | null;
+  plannedWeightLb?: number | string | null;
+  plannedReps?: number | string | null;
+};
+
+function parseOptionalNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
+  if (typeof value === "string") {
+    const t = value.trim();
+    if (t === "") return null;
+    return parseFloat(t);
+  }
+  return NaN;
+}
+
+/** Parse optional PlanSetsForm-style prescription on a template item. */
+function parseTemplateItemPlan(
+  o: Record<string, unknown>
+): { ok: true; plan: Pick<TemplateItemValidated, "plannedSetCount" | "plannedWeightKg" | "plannedReps"> } | { ok: false; error: string } {
+  const hasAnyPlanField =
+    (o.plannedSetCount !== undefined && o.plannedSetCount !== null && o.plannedSetCount !== "") ||
+    (o.plannedWeightLb !== undefined && o.plannedWeightLb !== null && o.plannedWeightLb !== "") ||
+    (o.plannedReps !== undefined && o.plannedReps !== null && o.plannedReps !== "");
+
+  if (!hasAnyPlanField) {
+    return {
+      ok: true,
+      plan: { plannedSetCount: null, plannedWeightKg: null, plannedReps: null },
+    };
+  }
+
+  const countRaw = parseOptionalNumber(o.plannedSetCount);
+  const weightLb = parseOptionalNumber(o.plannedWeightLb);
+  const repsRaw = parseOptionalNumber(o.plannedReps);
+
+  if (countRaw == null || !Number.isInteger(countRaw) || countRaw < TEMPLATE_PLANNED_SETS_MIN || countRaw > TEMPLATE_PLANNED_SETS_MAX) {
+    return { ok: false, error: `Planned sets must be ${TEMPLATE_PLANNED_SETS_MIN}–${TEMPLATE_PLANNED_SETS_MAX}` };
+  }
+  if (weightLb == null || Number.isNaN(weightLb) || weightLb < 0) {
+    return { ok: false, error: "Planned weight must be ≥ 0 lb" };
+  }
+  if (repsRaw == null || Number.isNaN(repsRaw) || !Number.isInteger(repsRaw) || repsRaw < 0) {
+    return { ok: false, error: "Planned reps must be ≥ 0" };
+  }
+
+  const plannedWeightKg = Math.round(toStorage(weightLb, "weight") * 1e6) / 1e6;
+  return {
+    ok: true,
+    plan: {
+      plannedSetCount: countRaw,
+      plannedWeightKg,
+      plannedReps: repsRaw,
+    },
+  };
+}
+
+function parseTemplateItemsFromNames(rawNames: unknown): TemplateItemValidated[] | null {
+  if (!Array.isArray(rawNames)) return null;
+  const names = rawNames
+    .filter((n): n is string => typeof n === "string")
+    .map((n) => templateExerciseDisplayName(n))
+    .filter((n) => n.length > 0);
+  if (names.length < TEMPLATE_ITEMS_MIN || names.length > TEMPLATE_ITEMS_MAX) return null;
+  return names.map((displayName, i) => ({
+    exerciseName: displayName,
+    normalizedName: normalizeExerciseName(displayName),
+    orderIndex: i,
+    plannedSetCount: null,
+    plannedWeightKg: null,
+    plannedReps: null,
+  }));
+}
+
+function parseTemplateItemsFromObjects(
+  rawItems: unknown
+): { ok: true; items: TemplateItemValidated[] } | { ok: false; error: string } {
+  if (!Array.isArray(rawItems) || rawItems.length < TEMPLATE_ITEMS_MIN || rawItems.length > TEMPLATE_ITEMS_MAX) {
+    return {
+      ok: false,
+      error: `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`,
+    };
+  }
+  const parsed: TemplateItemValidated[] = [];
+  for (let i = 0; i < rawItems.length; i++) {
+    const entry = rawItems[i];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return { ok: false, error: "Each template item must be an object" };
+    }
+    const o = entry as Record<string, unknown>;
+    const exName =
+      typeof o.exerciseName === "string" ? templateExerciseDisplayName(o.exerciseName) : "";
+    if (!exName) {
+      return { ok: false, error: `Template must have at least ${TEMPLATE_ITEMS_MIN} exercises (no empty names)` };
+    }
+    const orderIndex = typeof o.orderIndex === "number" ? o.orderIndex : i;
+    const planResult = parseTemplateItemPlan(o);
+    if (!planResult.ok) return { ok: false, error: planResult.error };
+    parsed.push({
+      exerciseName: exName,
+      normalizedName: normalizeExerciseName(exName),
+      orderIndex,
+      ...planResult.plan,
+    });
+  }
+  const items = parsed
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((item, i) => ({ ...item, orderIndex: i }));
+  return { ok: true, items };
+}
 
 export function validateTemplateCreate(data: {
   name: unknown;
   exerciseNames?: unknown;
-}): { ok: true; data: { name: string; items: { exerciseName: string; normalizedName: string; orderIndex: number }[] } } | { ok: false; errors: TemplateFormErrors } {
+  items?: unknown;
+}): { ok: true; data: { name: string; items: TemplateItemValidated[] } } | { ok: false; errors: TemplateFormErrors } {
   const errors: TemplateFormErrors = {};
   const nameRaw = typeof data.name === "string" ? data.name : "";
   const name = nameRaw.trim();
   if (name.length < TEMPLATE_NAME_MIN || name.length > TEMPLATE_NAME_MAX) {
     errors.name = `Name must be ${TEMPLATE_NAME_MIN}–${TEMPLATE_NAME_MAX} characters`;
   }
-  const rawNames = data.exerciseNames;
-  let names: string[] = [];
-  if (Array.isArray(rawNames)) {
-    names = rawNames
-      .filter((n): n is string => typeof n === "string")
-      .map((n) => templateExerciseDisplayName(n))
-      .filter((n) => n.length > 0);
+
+  let items: TemplateItemValidated[] | null = null;
+  if (data.items !== undefined) {
+    const parsed = parseTemplateItemsFromObjects(data.items);
+    if (!parsed.ok) errors.items = parsed.error;
+    else items = parsed.items;
+  } else {
+    items = parseTemplateItemsFromNames(data.exerciseNames);
+    if (!items) {
+      errors.items = `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`;
+    }
   }
-  if (names.length < TEMPLATE_ITEMS_MIN || names.length > TEMPLATE_ITEMS_MAX) {
-    errors.items = `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`;
-  }
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const items = names.map((displayName, i) => ({
-    exerciseName: displayName,
-    normalizedName: normalizeExerciseName(displayName),
-    orderIndex: i,
-  }));
+
+  if (Object.keys(errors).length > 0 || !items) return { ok: false, errors };
   return { ok: true, data: { name: name.slice(0, TEMPLATE_NAME_MAX), items } };
 }
 
 export function validateTemplateUpdate(data: {
   name?: unknown;
   items?: unknown;
-}): { ok: true; data: { name?: string; items: { exerciseName: string; normalizedName: string; orderIndex: number }[] } } | { ok: false; errors: TemplateFormErrors } {
+}): { ok: true; data: { name?: string; items: TemplateItemValidated[] } } | { ok: false; errors: TemplateFormErrors } {
   const errors: TemplateFormErrors = {};
   let name: string | undefined;
   if (data.name !== undefined) {
@@ -290,27 +411,11 @@ export function validateTemplateUpdate(data: {
       name = trimmed;
     }
   }
-  let items: { exerciseName: string; normalizedName: string; orderIndex: number }[] = [];
+  let items: TemplateItemValidated[] = [];
   if (data.items !== undefined) {
-    if (!Array.isArray(data.items) || data.items.length < TEMPLATE_ITEMS_MIN || data.items.length > TEMPLATE_ITEMS_MAX) {
-      errors.items = `Template must have ${TEMPLATE_ITEMS_MIN}–${TEMPLATE_ITEMS_MAX} exercises`;
-    } else {
-      const parsed = (data.items as unknown[])
-        .map((entry: unknown, i: number) => {
-          if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
-          const o = entry as Record<string, unknown>;
-          const exName = typeof o.exerciseName === "string" ? templateExerciseDisplayName(o.exerciseName) : "";
-          const orderIndex = typeof o.orderIndex === "number" ? o.orderIndex : i;
-          if (!exName) return null;
-          return { exerciseName: exName, normalizedName: normalizeExerciseName(exName), orderIndex };
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null);
-      if (parsed.length < TEMPLATE_ITEMS_MIN) {
-        errors.items = `Template must have at least ${TEMPLATE_ITEMS_MIN} exercises (no empty names)`;
-      } else {
-        items = parsed.sort((a, b) => a.orderIndex - b.orderIndex).map((item, i) => ({ ...item, orderIndex: i }));
-      }
-    }
+    const parsed = parseTemplateItemsFromObjects(data.items);
+    if (!parsed.ok) errors.items = parsed.error;
+    else items = parsed.items;
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, data: { name, items } };

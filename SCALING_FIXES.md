@@ -1,64 +1,75 @@
 # Scaling & Data Integrity Fixes — Summary
 
+Historical notes from a scaling / tenant-isolation pass. Treat as a changelog of intent, not a live feature checklist — some items below are **obsolete or never shipped** in the current tree.
+
+## Current product (auth & access)
+
+- **Auth:** Auth.js (NextAuth v5), credentials provider, JWT session with `user.id` and `user.role` (`TRAINER` | `CLIENT`).
+- **Middleware:** Session-cookie gate for protected prefixes; no `ACCESS_TOKEN` / shared-secret access gate.
+- **Tenant isolation:** Trainers scoped via `Client.trainerId` and `assertTrainerOwnsClient` / `assertClientAccess` in `src/lib/authz.ts`.
+
 ## Audit (pre-implementation)
 
-- **Auth:** NextAuth v5 (Auth.js), credentials provider, JWT session with `user.id` and `user.role` (TRAINER | CLIENT).
-- **Models:** `User`, `Client` (profile), `WorkoutSession`, `Exercise`, `Set`, `ClientWeightRecord`. `TrainerClient` links trainer User to client User (for assignments), not to Client profile. No `trainerId` on Client → no tenant isolation; dashboard shows all clients.
-- **Sets:** Server actions only do per-row create/update/delete (no "replace all"). Overwrite risk: wrong `exerciseId` from client or missing ordering; adding `orderIndex` and strict validation reduces risk.
-- **Analytics:** E1RM, volume, PRs computed client-side in `WeightCharts.tsx` from fetched sessions.
-- **Export:** Sync Excel in `/api/export/excel`; can time out on very large data.
+- **Models:** `User`, `Client` (profile), `WorkoutSession`, `Exercise`, `Set`, `ClientWeightRecord`. `TrainerClient` links trainer User to client User (for assignments). Early builds lacked `trainerId` on Client (fixed in the schema change below).
+- **Sets:** Server actions do per-row create/update/delete (no “replace all”).
+- **Analytics:** Metrics can be computed client-side in charts and via server `GET /api/clients/[id]/metrics`.
+- **Export (obsolete claim):** Older notes referred to sync Excel at `/api/export/excel`. **That route and UI are not present.** Current export surface is Whoop-oriented (`/api/export/whoop`), not a general Excel dump.
 
 ## What Changed
 
 ### Schema
-- **Client:** Added `trainerId String?` (FK to User) for multi-trainer tenant isolation. Existing clients get `trainerId` set in seed/migration to first trainer.
-- **Exercise:** Added `orderIndex Int @default(0)` for stable ordering within a session.
-- **Set:** Added `orderIndex Int @default(0)` for stable ordering within an exercise.
-- **ClientMetricsCache:** New table `(clientId, rangeKey, computedAt, payloadJson)` for server-side metrics cache. Invalidated on session/set/exercise writes for that client.
+
+- **Client:** `trainerId String?` (FK to User) for multi-trainer tenant isolation.
+- **Exercise / Set:** `orderIndex` for stable ordering.
+- **ClientMetricsCache:** `(clientId, rangeKey, computedAt, payloadJson)` for server-side metrics cache; invalidated on session/set/exercise writes.
 
 ### Auth / RBAC
+
 - **assertTrainerOwnsClient(clientId):** Trainer may access client only if `client.trainerId === session.user.id` or `client.trainerId == null` (legacy).
-- **assertClientAccess:** For TRAINER role, now calls `assertTrainerOwnsClient(clientId)` so trainers see only their clients.
-- Dashboard, `listClientsBasic`, `listUnlinkedClients`, `listClientAccounts`, createClientLoginAndLink (when linking existing client), and export filter by trainer’s clients.
+- **assertClientAccess:** Trainers go through ownership checks; clients only their linked profile.
+- Dashboard and client listing filter by the trainer’s clients.
 
 ### Server-side validation
-- Zod used for mutation inputs where added (e.g. set create/update, session create). Existing validators in `lib/validations` and `lib/sanitize` retained; server actions validate and never trust client input.
-- Input length limits and sanitization (notes, names) enforced server-side.
+
+- Zod for mutation inputs where added; sanitization/length limits for notes and names.
 
 ### Metrics (server-side + cache)
-- **GET /api/clients/[id]/metrics?range=7d|30d|90d:** Returns total volume, estimated 1RM (Epley) per exercise, PRs. Computed from DB; result stored in `ClientMetricsCache` by `(clientId, rangeKey)`. Cache invalidated on any session/set/exercise change for that client. Stale-while-revalidate: if cache age < 5 min, return cache; else recompute and update cache.
+
+- **GET /api/clients/[id]/metrics?range=7d|30d|90d:** Volume, estimated 1RM (Epley), PRs; cached in `ClientMetricsCache` with short stale-while-revalidate window.
 
 ### Export
-- Export remains synchronous; UI shows “Preparing export…” and disables button while request is in flight to avoid double submission and give feedback.
-- Optional row limits (e.g. max 5000 per sheet) documented to avoid timeouts; no queue or async job for now.
+
+- **Status:** Excel export described in earlier drafts is **unimplemented / removed** in this repo.
+- Whoop CSV/export for allowlisted client names remains a separate, limited path.
 
 ### Pagination
-- Sessions list already uses cursor-style pagination via `getClientSessionsPaginated` (take + 1, hasMore). No change to API; client page already uses `LoadMoreSessions`.
+
+- Sessions list uses cursor-style pagination (`getClientSessionsPaginated`).
 
 ### Security
-- Notes and names rendered as plain text (no `dangerouslySetInnerHTML`). Input length and sanitization enforced. Optional lightweight rate limit on login route.
+
+- Notes and names rendered as plain text (no `dangerouslySetInnerHTML`). Auth.js session required for app use.
 
 ---
 
-## Files Touched
+## Files Touched (historical)
 
 | Area | Files |
 |------|--------|
-| Schema | `prisma/schema.prisma`, `prisma/migrations/20260306000000_add_trainer_tenant_order_metrics/migration.sql` |
-| Seed | `prisma/seed.ts` (trainerId on new clients, updateMany for legacy null trainerId) |
-| Authz | `src/lib/authz.ts` (assertTrainerOwnsClient, assertClientAccess uses it for TRAINER) |
-| Actions | `src/app/actions/clients.ts`, `src/app/actions/accounts.ts`, `src/app/actions/sets.ts`, `src/app/actions/sessions.ts`, `src/app/actions/exercises.ts` |
-| Dashboard | `src/app/dashboard/page.tsx` (filter clients by trainerId) |
-| Export | `src/app/api/export/excel/route.ts` (filter by trainerId), `src/components/ExportToExcelCard.tsx` (progress UI + fetch-based download) |
-| Metrics | `src/lib/metrics.ts`, `src/app/api/clients/[id]/metrics/route.ts`, cache invalidation in set/session/exercise actions |
-| Validation | `src/lib/schemas.ts` (Zod schemas for set/session/clientId) |
-| Tests | `src/lib/metrics.test.ts`, `src/lib/schemas.test.ts`, `src/lib/authz.test.ts`, `src/app/actions/sets.test.ts` |
+| Schema | `prisma/schema.prisma`, related migrations |
+| Seed | `prisma/seed.ts` |
+| Authz | `src/lib/authz.ts` |
+| Actions | `src/app/actions/clients.ts`, `accounts.ts`, `sets.ts`, `sessions.ts`, `exercises.ts` |
+| Dashboard | `src/app/dashboard/page.tsx` |
+| Metrics | `src/lib/metrics.ts`, `src/app/api/clients/[id]/metrics/route.ts` |
+| Validation | `src/lib/schemas.ts` |
+| Tests | `src/lib/metrics.test.ts`, `schemas.test.ts`, `authz.test.ts`, action tests under `src/` |
 
 ---
 
 ## How to run
 
-- Migration: `npx prisma migrate dev --name add-trainer-tenant-metrics-cache`
-- Seed: `npx prisma db seed` (sets `trainerId` for existing clients)
+- Migration: `npx prisma migrate deploy` (or `migrate dev` locally)
+- Seed: `npx prisma db seed`
 - Metrics: `GET /api/clients/:id/metrics?range=30d`
-- Export: Use “Export to Excel” from Manage Accounts; UI shows progress and disables button while exporting.
+- Tests: `npm test`

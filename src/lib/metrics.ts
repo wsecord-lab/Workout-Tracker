@@ -1,35 +1,30 @@
 import { prisma } from "@/lib/db";
 import { COMPLETED_SET_WHERE } from "@/lib/sets";
+import {
+  type ClientMetricsPayload,
+  type MetricsRangeKey,
+  parseRange,
+} from "@/lib/metrics-shared";
+
+export type {
+  ClientMetricsPayload,
+  ExerciseMetrics,
+  MetricsRangeKey,
+} from "@/lib/metrics-shared";
+export {
+  METRICS_RANGE_KEYS,
+  isMetricsRangeKey,
+  parseRange,
+  metricsRangeLabel,
+  formatVolumeKgReps,
+  findExerciseMetrics,
+} from "@/lib/metrics-shared";
 
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 function epley1RM(weightKg: number, reps: number): number {
   if (reps <= 0) return weightKg;
   return weightKg * (1 + reps / 30);
-}
-
-export type ClientMetricsPayload = {
-  totalVolumeKgReps: number;
-  exercises: Array<{
-    exerciseName: string;
-    bestE1RMKg: number;
-    bestWeightKg: number;
-    bestVolumeKgReps: number;
-    sessionDate: string;
-  }>;
-  computedAt: string; // ISO
-};
-
-const RANGE_DAYS: Record<string, number> = {
-  "7d": 7,
-  "30d": 30,
-  "90d": 90,
-};
-
-export function parseRange(range: string | null): number | null {
-  if (!range || typeof range !== "string") return null;
-  const d = RANGE_DAYS[range.toLowerCase()];
-  return d ?? null;
 }
 
 /** Shape aggregateMetrics needs — structural so tests don't have to mock Prisma. */
@@ -127,9 +122,10 @@ export async function getClientMetricsCached(
 ): Promise<ClientMetricsPayload> {
   const rangeDays = parseRange(rangeKey);
   if (rangeDays == null) throw new Error("Invalid range");
+  const key = rangeKey.toLowerCase() as MetricsRangeKey;
 
   const cached = await prisma.clientMetricsCache.findUnique({
-    where: { clientId_rangeKey: { clientId, rangeKey } },
+    where: { clientId_rangeKey: { clientId, rangeKey: key } },
   });
 
   const now = Date.now();
@@ -142,8 +138,8 @@ export async function getClientMetricsCached(
 
   const payload = await computeClientMetrics(clientId, rangeDays);
   await prisma.clientMetricsCache.upsert({
-    where: { clientId_rangeKey: { clientId, rangeKey } },
-    create: { clientId, rangeKey, payloadJson: JSON.stringify(payload) },
+    where: { clientId_rangeKey: { clientId, rangeKey: key } },
+    create: { clientId, rangeKey: key, payloadJson: JSON.stringify(payload) },
     update: { payloadJson: JSON.stringify(payload), computedAt: new Date() },
   });
   return payload;

@@ -26,9 +26,13 @@ export default async function ChartsPage({
 
   if (isTrainer) {
     clients = await prisma.client.findMany({
+      where: { trainerId: user.id },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
+    if (queryClientId && !clients.some((c) => c.id === queryClientId)) {
+      redirect("/charts");
+    }
     clientId = queryClientId ?? clients[0]?.id ?? null;
   } else {
     clientId = await getClientIdForCurrentUser();
@@ -88,7 +92,7 @@ export default async function ChartsPage({
               />
             </div>
             <div className="min-w-0 overflow-hidden">
-              <ExerciseWeightChart progress={progress} />
+              <ExerciseWeightChart progress={progress} clientId={clientId} />
             </div>
           </div>
           {progress.length > 0 && (

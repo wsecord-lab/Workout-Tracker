@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertClientAccess, requireTrainer } from "@/lib/authz";
 import { validateClient } from "@/lib/validations";
-import { auth } from "@/auth";
 
 export type ClientActionResult =
   | { ok: true; id?: string }
@@ -63,6 +62,7 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<void> {
+  await requireTrainer();
   await assertClientAccess(id);
   await prisma.client.delete({ where: { id } });
   revalidatePath("/");

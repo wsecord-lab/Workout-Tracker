@@ -13,8 +13,21 @@ import {
   Brush,
 } from "recharts";
 import { formatWeight } from "@/lib/units";
+import {
+  type ClientMetricsPayload,
+  type MetricsRangeKey,
+  findExerciseMetrics,
+  formatVolumeKgReps,
+  metricsRangeLabel,
+} from "@/lib/metrics-shared";
+import {
+  type ChartTimeRange,
+  chartTimeRangeToMetricsKey,
+} from "@/lib/chart-metrics";
 
 const LB_PER_KG = 2.20462;
+
+export type { ChartTimeRange };
 
 /** Local date key YYYY-MM-DD (avoids UTC shifting). */
 function dayKey(d: Date): string {
@@ -176,12 +189,10 @@ function exerciseMetricValue(p: ExerciseChartPoint, metric: ExerciseMetric): num
   }
 }
 
-export type ChartTimeRange = "week" | "month" | "3months" | "6months" | "year" | "all";
-
 const TIME_RANGE_OPTIONS: { value: ChartTimeRange; label: string }[] = [
-  { value: "week", label: "Past week" },
-  { value: "month", label: "Past month" },
-  { value: "3months", label: "Past 3 months" },
+  { value: "week", label: "Past 7 days" },
+  { value: "month", label: "Past 30 days" },
+  { value: "3months", label: "Past 90 days" },
   { value: "6months", label: "Past 6 months" },
   { value: "year", label: "Past 1 year" },
   { value: "all", label: "All time" },
@@ -397,6 +408,103 @@ function useBrushWithCommit(n: number, resetDeps: React.DependencyList) {
 const BRUSH_HEIGHT_DESKTOP = 36;
 const BRUSH_HEIGHT_MOBILE = 48;
 
+/** Fetch cached metrics for 7d/30d/90d chart ranges. */
+function useClientMetrics(clientId: string | undefined, timeRange: ChartTimeRange) {
+  const metricsKey = chartTimeRangeToMetricsKey(timeRange);
+  const [metrics, setMetrics] = useState<ClientMetricsPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!clientId || !metricsKey) {
+      setMetrics(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/clients/${encodeURIComponent(clientId)}/metrics?range=${metricsKey}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`metrics ${res.status}`);
+        return res.json() as Promise<ClientMetricsPayload>;
+      })
+      .then((payload) => {
+        if (!cancelled) setMetrics(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setMetrics(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, metricsKey]);
+
+  return { metrics, loading, metricsKey };
+}
+
+function MetricsProgressCallouts({
+  metrics,
+  metricsKey,
+  loading,
+  exerciseName,
+}: {
+  metrics: ClientMetricsPayload | null;
+  metricsKey: MetricsRangeKey | null;
+  loading: boolean;
+  exerciseName: string;
+}) {
+  if (!metricsKey) return null;
+
+  const exercise = metrics ? findExerciseMetrics(metrics, exerciseName) : null;
+  const label = metricsRangeLabel(metricsKey);
+
+  return (
+    <div
+      className="mb-4 rounded-lg border border-border bg-surface/50 px-3 py-3"
+      aria-live="polite"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted">
+          Progress snapshot · {label}
+        </div>
+        {loading && <span className="text-xs text-muted">Updating…</span>}
+      </div>
+      {metrics ? (
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div>
+            <div className="text-xs text-muted">Total volume</div>
+            <div className="text-base font-semibold text-[var(--text)]">
+              {formatVolumeKgReps(metrics.totalVolumeKgReps)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted">PR weight</div>
+            <div className="text-base font-semibold text-[var(--text)]">
+              {exercise ? formatWeight(exercise.bestWeightKg) : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted">PR e1RM</div>
+            <div className="text-base font-semibold text-[var(--text)]">
+              {exercise ? formatWeight(exercise.bestE1RMKg) : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted">Volume PR</div>
+            <div className="text-base font-semibold text-[var(--text)]">
+              {exercise ? formatVolumeKgReps(exercise.bestVolumeKgReps) : "—"}
+            </div>
+          </div>
+        </div>
+      ) : !loading ? (
+        <p className="mt-2 text-sm text-muted">No completed sets in this range yet.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function BodyWeightChart({
   records,
   currentWeightKg,
@@ -404,7 +512,7 @@ export function BodyWeightChart({
   records: { weightKg: number; recordedAt: Date }[];
   currentWeightKg: number;
 }) {
-  const [timeRange, setTimeRange] = useState<ChartTimeRange>("all");
+  const [timeRange, setTimeRange] = useState<ChartTimeRange>("month");
   const [showTrend, setShowTrend] = useState(false);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
   const isMd = useIsMd();
@@ -451,8 +559,6 @@ export function BodyWeightChart({
     () => (committedRange ? filteredPoints.slice(committedRange.startIndex, committedRange.endIndex + 1) : filteredPoints),
     [filteredPoints, committedRange]
   );
-  const visibleStartClamped = committedRange?.startIndex ?? 0;
-  const visibleEndClamped = committedRange?.endIndex ?? Math.max(0, n - 1);
 
   if (filteredPoints.length === 0) return null;
 
@@ -813,15 +919,24 @@ function exerciseChartDataKey(metric: ExerciseMetric): "bestWeightLb" | "e1rmLb"
   }
 }
 
-export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise[] }) {
+export function ExerciseWeightChart({
+  progress,
+  clientId,
+}: {
+  progress: ProgressByExercise[];
+  /** When set, 7d/30d/90d ranges load PR/volume callouts from the metrics cache API. */
+  clientId?: string;
+}) {
   const listId = useId();
   const isMd = useIsMd();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
-  const [timeRange, setTimeRange] = useState<ChartTimeRange>("all");
+  const [timeRange, setTimeRange] = useState<ChartTimeRange>(clientId ? "month" : "all");
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
+
+  const { metrics, loading: metricsLoading, metricsKey } = useClientMetrics(clientId, timeRange);
 
   useEffect(() => {
     setFavorites(loadFavorites());
@@ -868,6 +983,7 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
   const isFavorited = favorites.includes(selectedName);
   const exerciseNames = progress.map((p) => p.exerciseName);
   const favoritesInProgress = favorites.filter((name) => exerciseNames.includes(name));
+  const exerciseMetrics = metrics ? findExerciseMetrics(metrics, selectedName) : null;
 
   function toggleFavorite() {
     const next = isFavorited
@@ -886,11 +1002,39 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
     if (idx >= 0) setSelectedIndex(idx);
   }
 
+  const seriesBestLb =
+    visibleData.length > 0
+      ? Math.max(...visibleData.map((p) => exerciseMetricValue(p, selectedMetric)))
+      : null;
+  const seriesVolumePr =
+    visibleData.length > 0 ? Math.max(...visibleData.map((p) => p.volumeLbReps)) : null;
+
+  const bestDisplay =
+    exerciseMetrics != null
+      ? selectedMetric === "volume"
+        ? formatVolumeKgReps(exerciseMetrics.bestVolumeKgReps)
+        : selectedMetric === "e1rm"
+          ? formatWeight(exerciseMetrics.bestE1RMKg)
+          : formatWeight(exerciseMetrics.bestWeightKg)
+      : seriesBestLb != null
+        ? selectedMetric === "volume"
+          ? `${Math.round(seriesBestLb)} lb·reps`
+          : `${seriesBestLb.toFixed(1)} lb`
+        : "—";
+
+  const volumePrDisplay =
+    exerciseMetrics != null
+      ? formatVolumeKgReps(exerciseMetrics.bestVolumeKgReps)
+      : seriesVolumePr != null
+        ? `${Math.round(seriesVolumePr)} lb·reps`
+        : "—";
+
   return (
     <div className="card">
       <h3 className="mb-2 font-semibold text-[var(--text)]">Exercise weight over time</h3>
       <p className="mb-3 text-sm text-muted">
         Best set per session (one point per day)
+        {clientId ? " · PRs and volume for 7 / 30 / 90 days come from cached metrics" : ""}
       </p>
       <div className="mb-4 space-y-3 border-b border-border pb-3">
         {favoritesInProgress.length > 0 && (
@@ -968,6 +1112,14 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
           </select>
         </div>
       </div>
+      {clientId && (
+        <MetricsProgressCallouts
+          metrics={metrics}
+          metricsKey={metricsKey}
+          loading={metricsLoading}
+          exerciseName={selectedName}
+        />
+      )}
       {filteredChartData.length > 0 && visibleData.length > 0 && (
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
@@ -992,18 +1144,16 @@ export function ExerciseWeightChart({ progress }: { progress: ProgressByExercise
             </div>
           </div>
           <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted">Best</div>
-            <div className="text-lg font-semibold text-[var(--text)]">
-              {selectedMetric === "volume"
-                ? `${Math.round(Math.max(...visibleData.map((p) => p.volumeLbReps)))} lb·reps`
-                : `${Math.max(...visibleData.map((p) => exerciseMetricValue(p, selectedMetric))).toFixed(1)} lb`}
+            <div className="text-xs font-medium uppercase tracking-wide text-muted">
+              Best{exerciseMetrics ? " (range)" : ""}
             </div>
+            <div className="text-lg font-semibold text-[var(--text)]">{bestDisplay}</div>
           </div>
           <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted">Volume PR</div>
-            <div className="text-lg font-semibold text-[var(--text)]">
-              {visibleData.length > 0 ? `${Math.round(Math.max(...visibleData.map((p) => p.volumeLbReps)))} lb·reps` : "—"}
+            <div className="text-xs font-medium uppercase tracking-wide text-muted">
+              Volume PR{exerciseMetrics ? " (range)" : ""}
             </div>
+            <div className="text-lg font-semibold text-[var(--text)]">{volumePrDisplay}</div>
           </div>
         </div>
       )}

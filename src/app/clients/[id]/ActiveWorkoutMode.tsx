@@ -8,7 +8,10 @@ import { formatWeight, toDisplay, toStorage } from "@/lib/units";
 import { formatClock, formatDuration, getElapsedSeconds } from "@/lib/session-duration";
 import { createSet, updateSet, completeSet, uncompleteSet, syncCheckedSets } from "@/app/actions/sets";
 import { isCompletedSet, isPlannedOnly, formatPlanVsActual } from "@/lib/sets";
-import { markSessionFinished, getSessionDurationEstimate } from "@/app/actions/sessions";
+import { markSessionFinished, getSessionDurationEstimate, pauseSession } from "@/app/actions/sessions";
+import { notifyRestDone } from "@/lib/workout-cues";
+import { getFinishSkippedCopy } from "@/lib/workout-finish";
+import { useWakeLock } from "@/hooks/useWakeLock";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
 
@@ -23,23 +26,50 @@ function formatPreset(s: number) {
 
 // ─── Countdown Timer Hook ─────────────────────────────────────────────────────
 
-function useRestTimer() {
+function useRestTimer(onComplete?: () => void) {
   const [duration, setDuration] = useState(90);
   const [remaining, setRemaining] = useState(0);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  /** Prevents double-firing vibrate/beep if tick and visibility both see expiry. */
+  const cuedRef = useRef(false);
 
-  // Restore timer on mount (persists across page navigations)
+  function markDone(cue: boolean) {
+    setRunning(false);
+    setDone(true);
+    try {
+      localStorage.removeItem(TIMER_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (cue && !cuedRef.current) {
+      cuedRef.current = true;
+      onCompleteRef.current?.();
+    }
+  }
+
+  // Restore timer on mount (persists across page navigations).
+  // Already-expired restores show the banner but do not re-cue.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(TIMER_KEY);
       if (!raw) return;
       const { startedAt, duration: dur } = JSON.parse(raw) as { startedAt: number; duration: number };
       const rem = dur - Math.floor((Date.now() - startedAt) / 1000);
-      if (rem > 0) { setDuration(dur); setRemaining(rem); setRunning(true); }
-      else { setDone(true); localStorage.removeItem(TIMER_KEY); }
-    } catch { /* ignore */ }
+      if (rem > 0) {
+        setDuration(dur);
+        setRemaining(rem);
+        setRunning(true);
+      } else {
+        markDone(false);
+      }
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only restore
   }, []);
 
   // Snap to correct remaining time when tab regains focus
@@ -52,43 +82,68 @@ function useRestTimer() {
         const { startedAt, duration: dur } = JSON.parse(raw) as { startedAt: number; duration: number };
         const rem = Math.max(0, dur - Math.floor((Date.now() - startedAt) / 1000));
         setRemaining(rem);
-        if (rem === 0) { setRunning(false); setDone(true); localStorage.removeItem(TIMER_KEY); }
-      } catch { /* ignore */ }
+        if (rem === 0) markDone(true);
+      } catch {
+        /* ignore */
+      }
     }
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable listeners; markDone closes over cuedRef
   }, []);
 
   // Tick down every second
   useEffect(() => {
     if (!running) {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
       return;
     }
     intervalRef.current = setInterval(() => {
       setRemaining((r) => {
         if (r <= 1) {
-          clearInterval(intervalRef.current!); intervalRef.current = null;
-          setRunning(false); setDone(true);
-          localStorage.removeItem(TIMER_KEY);
+          clearInterval(intervalRef.current!);
+          intervalRef.current = null;
+          markDone(true);
           return 0;
         }
         return r - 1;
       });
     }, 1000);
-    return () => { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } };
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
 
   function start(dur?: number) {
     const d = dur ?? duration;
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    setDuration(d); setRemaining(d); setDone(false); setRunning(true);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    cuedRef.current = false;
+    setDuration(d);
+    setRemaining(d);
+    setDone(false);
+    setRunning(true);
     localStorage.setItem(TIMER_KEY, JSON.stringify({ startedAt: Date.now(), duration: d }));
   }
 
   function reset() {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    setRunning(false); setDone(false); setRemaining(0);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    cuedRef.current = false;
+    setRunning(false);
+    setDone(false);
+    setRemaining(0);
     localStorage.removeItem(TIMER_KEY);
   }
 
@@ -190,7 +245,8 @@ export function ActiveWorkoutMode({
   sessionId,
   clientId,
   startedAt,
-  onExit,
+  totalPausedSeconds = 0,
+  onPause,
   onFinish,
 }: {
   exercises: ExerciseWithSets[];
@@ -200,14 +256,19 @@ export function ActiveWorkoutMode({
   clientId: string;
   /** When the workout clock started. Null only if startSession hasn't landed yet. */
   startedAt: Date | string | null;
-  onExit: () => void;
+  /** Completed pause windows already folded into the DB. Open pause is not active in this UI. */
+  totalPausedSeconds?: number;
+  /** Persists pause + exits active mode back to the session editor. */
+  onPause: () => void;
   onFinish: () => void;
 }) {
   const router = useRouter();
   const [liveExercises, setLiveExercises] = useState<ExerciseWithSets[]>(exercises);
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [isFinishing, startFinishTransition] = useTransition();
+  const [isPausing, startPauseTransition] = useTransition();
   const [, startToggleTransition] = useTransition();
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
 
   // Completion lives in the database now, so it survives a device switch and the
   // trainer can see it. Derived, never stored separately.
@@ -241,14 +302,23 @@ export function ActiveWorkoutMode({
     });
   }, [sessionId, router]);
 
-  const timer = useRestTimer();
+  useWakeLock(true);
+
+  const timer = useRestTimer(() => {
+    void notifyRestDone();
+  });
 
   // Live elapsed clock. Recomputed from startedAt rather than incremented, so
   // it stays correct after the phone sleeps or the tab is backgrounded.
-  const [elapsed, setElapsed] = useState(() => (startedAt ? getElapsedSeconds(startedAt) : 0));
+  // Pause windows (totalPausedSeconds) are subtracted so time spent editing
+  // outside active mode does not inflate "time under workout".
+  const [elapsed, setElapsed] = useState(() =>
+    startedAt ? getElapsedSeconds(startedAt, new Date(), { totalPausedSeconds }) : 0
+  );
   useEffect(() => {
     if (!startedAt) return;
-    const tick = () => setElapsed(getElapsedSeconds(startedAt));
+    const tick = () =>
+      setElapsed(getElapsedSeconds(startedAt, new Date(), { totalPausedSeconds }));
     tick();
     const id = window.setInterval(tick, 1000);
     document.addEventListener("visibilitychange", tick);
@@ -256,7 +326,7 @@ export function ActiveWorkoutMode({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [startedAt]);
+  }, [startedAt, totalPausedSeconds]);
 
   // Pacing estimate from past workouts of the same name.
   const [estimateSeconds, setEstimateSeconds] = useState<number | null>(null);
@@ -349,15 +419,31 @@ export function ActiveWorkoutMode({
     setEditingSetId(null);
   }
 
-  function handleFinish() {
+  function handlePause() {
+    startPauseTransition(async () => {
+      // Clear rest countdown so it does not keep running while the user edits
+      // the session outside active mode (misleading "rest done" later).
+      timer.reset();
+      setFinishConfirmOpen(false);
+      try {
+        localStorage.removeItem(IN_PROGRESS_KEY);
+      } catch { /* ignore */ }
+      await pauseSession(sessionId, clientId);
+      onPause();
+    });
+  }
+
+  function requestFinish() {
     const skipped = totalSets - completedSets;
     if (skipped > 0) {
-      const ok = window.confirm(
-        `${skipped} planned set${skipped === 1 ? "" : "s"} not completed.\n\n` +
-          `They'll be kept on the workout as skipped, so you can see what was planned vs done. Finish anyway?`
-      );
-      if (!ok) return;
+      setFinishConfirmOpen(true);
+      return;
     }
+    commitFinish();
+  }
+
+  function commitFinish() {
+    setFinishConfirmOpen(false);
     startFinishTransition(async () => {
       await markSessionFinished(sessionId, clientId);
       try {
@@ -370,10 +456,63 @@ export function ActiveWorkoutMode({
 
   const totalSets = liveExercises.reduce((s, e) => s + e.sets.length, 0);
   const completedSets = checked.size;
+  const skippedSets = totalSets - completedSets;
+  const finishSkippedCopy =
+    skippedSets > 0 ? getFinishSkippedCopy(skippedSets, completedSets, totalSets) : null;
   const dateLabel = new Date(sessionDate).toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric",
   });
 
+  const finishModal =
+    finishConfirmOpen &&
+    finishSkippedCopy &&
+    typeof document !== "undefined" &&
+    createPortal(
+      <div
+        className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/50"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="finish-skipped-title"
+        aria-describedby="finish-skipped-desc"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !isFinishing) setFinishConfirmOpen(false);
+        }}
+      >
+        <div
+          className="rounded-lg border border-border bg-background p-5 shadow-lg max-w-md w-full space-y-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 id="finish-skipped-title" className="text-lg font-semibold text-[var(--text)]">
+            {finishSkippedCopy.title}
+          </h2>
+          <p
+            id="finish-skipped-desc"
+            className="text-sm text-muted leading-relaxed whitespace-pre-line"
+          >
+            {finishSkippedCopy.body}
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setFinishConfirmOpen(false)}
+              disabled={isFinishing}
+              className="tap-target btn-secondary text-sm py-2 px-4 rounded focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            >
+              {finishSkippedCopy.cancelLabel}
+            </button>
+            <button
+              type="button"
+              onClick={commitFinish}
+              disabled={isFinishing}
+              className="tap-target rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 outline-none focus:ring-2 focus:ring-green-500"
+            >
+              {isFinishing ? "Finishing…" : finishSkippedCopy.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
   const content = (
     <div className="fixed inset-0 z-[2000] flex flex-col bg-background overflow-hidden">
 
@@ -441,15 +580,22 @@ export function ActiveWorkoutMode({
 
         {/* Progress + actions */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <span className="text-xs text-muted whitespace-nowrap">{completedSets}/{totalSets} sets</span>
+          <span className="text-xs text-muted whitespace-nowrap text-right">
+            {completedSets}/{totalSets} sets
+            {skippedSets > 0 ? (
+              <span className="block text-amber-600 dark:text-amber-400">
+                {skippedSets} unchecked
+              </span>
+            ) : null}
+          </span>
           <div className="flex gap-1.5">
-            <button type="button" onClick={onExit}
-              className="rounded border border-border px-2.5 py-1.5 text-xs font-medium text-muted hover:text-[var(--text)] hover:bg-muted/20 outline-none focus:ring-2 focus:ring-primary">
-              Exit
+            <button type="button" onClick={handlePause} disabled={isPausing || isFinishing}
+              className="rounded border border-border px-2.5 py-1.5 text-xs font-medium text-muted hover:text-[var(--text)] hover:bg-muted/20 outline-none focus:ring-2 focus:ring-primary disabled:opacity-50">
+              {isPausing ? "…" : "Pause"}
             </button>
-            <button type="button" onClick={handleFinish} disabled={isFinishing}
+            <button type="button" onClick={requestFinish} disabled={isFinishing || isPausing}
               className="rounded bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 outline-none focus:ring-2 focus:ring-green-500">
-              {isFinishing ? "…" : "Finish ✓"}
+              {isFinishing ? "…" : skippedSets > 0 ? `Finish (${skippedSets} left)` : "Finish ✓"}
             </button>
           </div>
         </div>
@@ -567,5 +713,10 @@ export function ActiveWorkoutMode({
     </div>
   );
 
-  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
+  return typeof document !== "undefined" ? (
+    <>
+      {createPortal(content, document.body)}
+      {finishModal}
+    </>
+  ) : null;
 }

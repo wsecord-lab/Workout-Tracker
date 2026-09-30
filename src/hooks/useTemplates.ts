@@ -11,6 +11,14 @@ import {
   type TemplateWithItems,
 } from "@/app/actions/templates";
 
+export type TemplateItemFormInput = {
+  exerciseName: string;
+  orderIndex: number;
+  plannedSetCount?: number | null;
+  plannedWeightLb?: number | string | null;
+  plannedReps?: number | string | null;
+};
+
 export function useTemplates(includeArchived = false) {
   const router = useRouter();
   const [templates, setTemplates] = useState<TemplateWithItems[]>([]);
@@ -33,10 +41,10 @@ export function useTemplates(includeArchived = false) {
   }, [refresh]);
 
   const create = useCallback(
-    async (data: { name: string; exerciseNames: string[] }) => {
+    async (data: { name: string; items: TemplateItemFormInput[] }) => {
       const result = await createTemplate({
         name: data.name,
-        exerciseNames: data.exerciseNames,
+        items: data.items,
       });
       if (result.ok) {
         setTemplates((prev) => [result.template, ...prev]);
@@ -49,10 +57,7 @@ export function useTemplates(includeArchived = false) {
   );
 
   const update = useCallback(
-    async (
-      id: string,
-      data: { name?: string; items?: { exerciseName: string; orderIndex: number }[] }
-    ) => {
+    async (id: string, data: { name?: string; items?: TemplateItemFormInput[] }) => {
       const result = await updateTemplate(id, data);
       if (result.ok) {
         setTemplates((prev) =>

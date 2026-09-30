@@ -13,6 +13,7 @@ export default async function HomePage() {
   }
 
   const clients = await prisma.client.findMany({
+    where: { trainerId: user.id },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

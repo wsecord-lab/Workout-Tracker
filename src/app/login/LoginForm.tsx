@@ -64,6 +64,14 @@ export function LoginForm({ errorFromUrl }: Props) {
       <button type="submit" className="btn-primary w-full" disabled={submitting}>
         {submitting ? "Signing in…" : "Sign in"}
       </button>
+      <p className="text-center text-sm text-muted">
+        <a
+          href="/forgot-password"
+          className="text-secondary hover:text-secondary-hover hover:underline"
+        >
+          Forgot password?
+        </a>
+      </p>
     </form>
   );
 }

@@ -21,6 +21,8 @@ model User {
   passwordHash  String
   name          String?
   role          Role
+  /// True when a trainer set a temporary password; cleared after the user changes it.
+  mustChangePassword Boolean @default(false)
   createdAt     DateTime  @default(now())
   emailVerified DateTime?
   image         String?
@@ -30,6 +32,7 @@ model User {
   ownedClients  Client[]         @relation("ClientTrainer")
   trainerExerciseCatalog TrainerExerciseCatalogItem[]
   warmupBlocks  WarmupBlock[]
+  workoutTemplates WorkoutTemplate[]
   measurements  Measurement[]
   assignedAsTrainer TrainerClient[]  @relation("TrainerAssignments")
   assignedClients   TrainerClient[]  @relation("AssignedClients")
@@ -181,7 +184,11 @@ model WorkoutSession {
   /// Stamped when workout mode is first entered.
   startedAt     DateTime?
   finishedAt    DateTime?
-  /// Manual duration override in seconds. Null = derive from startedAt/finishedAt.
+  /// Set while the workout is paused (left active mode to edit). Null when running or never paused.
+  pausedAt      DateTime?
+  /// Accumulated seconds spent paused across pause/resume cycles. Cleared pause windows are folded in here.
+  totalPausedSeconds Int @default(0)
+  /// Manual duration override in seconds. Null = derive from startedAt/finishedAt (minus pauses).
   durationSeconds Int?
 
   @@index([clientId, date])
@@ -275,25 +282,32 @@ model Set {
   @@index([exerciseId, completedAt])
 }
 
-// —— Workout Templates (trainer-only, global) ———
+// —— Workout Templates (trainer-scoped) ———
 model WorkoutTemplate {
   id         String   @id @default(cuid())
+  trainerId  String
+  trainer    User     @relation(fields: [trainerId], references: [id], onDelete: Cascade)
   name       String
   isArchived Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   items      WorkoutTemplateItem[]
 
-  @@index([isArchived])
+  @@index([trainerId])
+  @@index([trainerId, isArchived])
 }
 
 model WorkoutTemplateItem {
-  id           String          @id @default(cuid())
-  templateId   String
-  orderIndex   Int
-  exerciseName String
-  normalizedName String
-  template     WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id              String          @id @default(cuid())
+  templateId      String
+  orderIndex      Int
+  exerciseName    String
+  normalizedName  String
+  /// When set with plannedWeightKg + plannedReps, apply creates that many planned sets.
+  plannedSetCount Int?
+  plannedWeightKg Float?
+  plannedReps     Int?
+  template        WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   @@index([templateId])
   @@unique([templateId, orderIndex])

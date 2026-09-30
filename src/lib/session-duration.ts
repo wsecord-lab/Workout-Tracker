@@ -3,15 +3,36 @@ export type DurationSource = {
   finishedAt: Date | string | null;
   /** Manual override in seconds. Null means "derive it". */
   durationSeconds: number | null;
+  /** Accumulated pause time already folded in (completed pause windows). */
+  totalPausedSeconds?: number | null;
+  /** If set, the session is currently paused; that open window is not yet in totalPausedSeconds. */
+  pausedAt?: Date | string | null;
+};
+
+export type ElapsedPauseSource = {
+  totalPausedSeconds?: number | null;
+  pausedAt?: Date | string | null;
 };
 
 export const MIN_DURATION_MINUTES = 1;
 export const MAX_DURATION_MINUTES = 1440; // 24h
 
-function toTime(v: Date | string | null): number | null {
+function toTime(v: Date | string | null | undefined): number | null {
   if (v == null) return null;
   const t = v instanceof Date ? v.getTime() : new Date(v).getTime();
   return Number.isNaN(t) ? null : t;
+}
+
+/** Seconds of pause to subtract from a wall-clock span ending at `until`. */
+function pausedSecondsToSubtract(
+  pause: ElapsedPauseSource | undefined,
+  until: number
+): number {
+  if (!pause) return 0;
+  const stored = Math.max(0, pause.totalPausedSeconds ?? 0);
+  const pausedAt = toTime(pause.pausedAt ?? null);
+  const openWindow = pausedAt != null ? Math.max(0, Math.round((until - pausedAt) / 1000)) : 0;
+  return stored + openWindow;
 }
 
 /**
@@ -22,21 +43,33 @@ function toTime(v: Date | string | null): number | null {
  * A negative computed span means the clocks disagree or a date was edited by
  * hand; that yields null rather than 0, because "0 min" reads as a confident
  * measurement and null reads as "unknown", which is the truth.
+ *
+ * Derived duration subtracts accumulated pause time so "time under workout"
+ * does not include time spent editing while paused.
  */
 export function getSessionDurationSeconds(s: DurationSource): number | null {
   if (s.durationSeconds != null) return s.durationSeconds;
   const start = toTime(s.startedAt);
   const finish = toTime(s.finishedAt);
   if (start == null || finish == null) return null;
-  const seconds = Math.round((finish - start) / 1000);
+  const wall = Math.round((finish - start) / 1000);
+  const seconds = wall - pausedSecondsToSubtract(s, finish);
   return seconds >= 0 ? seconds : null;
 }
 
-/** Live elapsed time for a session that's still running. */
-export function getElapsedSeconds(startedAt: Date | string, now: Date = new Date()): number {
+/**
+ * Live elapsed time for a session that's still running.
+ * Subtracts completed + open pause windows so the clock freezes while paused.
+ */
+export function getElapsedSeconds(
+  startedAt: Date | string,
+  now: Date = new Date(),
+  pause?: ElapsedPauseSource
+): number {
   const start = toTime(startedAt);
   if (start == null) return 0;
-  return Math.max(0, Math.round((now.getTime() - start) / 1000));
+  const until = now.getTime();
+  return Math.max(0, Math.round((until - start) / 1000) - pausedSecondsToSubtract(pause, until));
 }
 
 /** "48 min", "1h 04m", "0:52" for the live clock. Null renders as an em dash. */

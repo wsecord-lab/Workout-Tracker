@@ -51,10 +51,7 @@ export function Header() {
               >
                 Calendar
               </Link>
-              <Link
-                href={`/clients/${clientProfileId}/edit`}
-                className={clientNavLinkClass}
-              >
+              <Link href="/manage-account" className={clientNavLinkClass}>
                 Manage Account
               </Link>
               <LogoutButton variant="link" />

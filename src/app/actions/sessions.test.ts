@@ -21,6 +21,7 @@ vi.mock("@/lib/db", () => {
     },
     workoutTemplate: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
     },
     exercise: {
       create: vi.fn(),
@@ -42,19 +43,40 @@ describe("createSessionWithTemplate", () => {
     const { prisma } = await import("@/lib/db");
     (assertClientAccess as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (requireTrainer as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "trainer-1" });
+    (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      (cb: (tx: unknown) => unknown) => cb(prisma)
+    );
     (prisma.workoutSession.create as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "session-new",
       clientId: "client-1",
     });
-    (prisma.workoutTemplate.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (prisma.workoutTemplate.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "tpl-1",
+      trainerId: "trainer-1",
       isArchived: false,
       items: [
-        { orderIndex: 0, exerciseName: "Bench Press", normalizedName: "bench press" },
-        { orderIndex: 1, exerciseName: "Squat", normalizedName: "squat" },
+        {
+          orderIndex: 0,
+          exerciseName: "Bench Press",
+          normalizedName: "bench press",
+          plannedSetCount: null,
+          plannedWeightKg: null,
+          plannedReps: null,
+        },
+        {
+          orderIndex: 1,
+          exerciseName: "Squat",
+          normalizedName: "squat",
+          plannedSetCount: null,
+          plannedWeightKg: null,
+          plannedReps: null,
+        },
       ],
     });
-    (prisma.exercise.createMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
+    (prisma.exercise.create as ReturnType<typeof vi.fn>).mockImplementation(
+      ({ data }: { data: { name: string; orderIndex: number } }) =>
+        Promise.resolve({ id: `ex-${data.orderIndex}`, name: data.name })
+    );
   });
 
   it("applying template creates correct number and order of exercises in session", async () => {
@@ -64,20 +86,59 @@ describe("createSessionWithTemplate", () => {
     const result = await createSessionWithTemplate("client-1", "Push", "tpl-1");
     expect(result.ok).toBe(true);
 
+    expect(prisma.workoutTemplate.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "tpl-1", trainerId: "trainer-1", isArchived: false },
+      })
+    );
     expect(prisma.workoutSession.create).toHaveBeenCalledTimes(1);
-    expect(prisma.exercise.createMany).toHaveBeenCalledTimes(1);
-    const createManyCall = (prisma.exercise.createMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(createManyCall.data).toHaveLength(2);
-    expect(createManyCall.data[0]).toMatchObject({
+    expect(prisma.exercise.create).toHaveBeenCalledTimes(2);
+    const first = (prisma.exercise.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const second = (prisma.exercise.create as ReturnType<typeof vi.fn>).mock.calls[1][0];
+    expect(first.data).toMatchObject({
       sessionId: "session-new",
       name: "Bench Press",
       orderIndex: 0,
     });
-    expect(createManyCall.data[1]).toMatchObject({
+    expect(second.data).toMatchObject({
       sessionId: "session-new",
       name: "Squat",
       orderIndex: 1,
     });
+  });
+
+  it("applies planned sets from template items as incomplete targets", async () => {
+    const { createSessionWithTemplate } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    (prisma.workoutTemplate.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "tpl-1",
+      trainerId: "trainer-1",
+      isArchived: false,
+      items: [
+        {
+          orderIndex: 0,
+          exerciseName: "Bench Press",
+          normalizedName: "bench press",
+          plannedSetCount: 3,
+          plannedWeightKg: 83.9,
+          plannedReps: 5,
+        },
+      ],
+    });
+
+    const result = await createSessionWithTemplate("client-1", "Push", "tpl-1");
+    expect(result.ok).toBe(true);
+    expect(prisma.set.createMany).toHaveBeenCalledTimes(1);
+    const sets = (prisma.set.createMany as ReturnType<typeof vi.fn>).mock.calls[0][0].data;
+    expect(sets).toHaveLength(3);
+    for (const s of sets) {
+      expect(s.completedAt).toBeNull();
+      expect(s.weightKg).toBe(83.9);
+      expect(s.reps).toBe(5);
+      expect(s.plannedWeightKg).toBe(83.9);
+      expect(s.plannedReps).toBe(5);
+    }
+    expect(sets.map((s: { orderIndex: number }) => s.orderIndex)).toEqual([0, 1, 2]);
   });
 
   it("includes calendar date on session when calendarDateKey is provided", async () => {
@@ -157,6 +218,9 @@ describe("startSession", () => {
     const { prisma } = await import("@/lib/db");
     (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       startedAt: null,
+      finishedAt: null,
+      pausedAt: null,
+      totalPausedSeconds: 0,
       clientId: "client-1",
     });
 
@@ -168,12 +232,15 @@ describe("startSession", () => {
     expect(call.data.startedAt).toBeInstanceOf(Date);
   });
 
-  it("is idempotent: resuming a workout does not restart the clock", async () => {
+  it("is idempotent: resuming a running workout does not restart the clock", async () => {
     const { startSession } = await import("./sessions");
     const { prisma } = await import("@/lib/db");
     const existing = new Date("2026-07-01T10:00:00Z");
     (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       startedAt: existing,
+      finishedAt: null,
+      pausedAt: null,
+      totalPausedSeconds: 0,
       clientId: "client-1",
     });
 
@@ -183,16 +250,90 @@ describe("startSession", () => {
     expect(prisma.workoutSession.update).not.toHaveBeenCalled();
   });
 
+  it("clears pause and accumulates pause time on resume", async () => {
+    const { startSession } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    const existing = new Date("2026-07-01T10:00:00Z");
+    const pausedAt = new Date(Date.now() - 120_000);
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      startedAt: existing,
+      finishedAt: null,
+      pausedAt,
+      totalPausedSeconds: 30,
+      clientId: "client-1",
+    });
+
+    const result = await startSession("s1", "client-1");
+
+    expect(result).toEqual({ ok: true, startedAt: existing.toISOString() });
+    const call = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.data.pausedAt).toBeNull();
+    expect(call.data.totalPausedSeconds).toBeGreaterThanOrEqual(150);
+  });
+
   it("refuses a session belonging to another client", async () => {
     const { startSession } = await import("./sessions");
     const { prisma } = await import("@/lib/db");
     (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       startedAt: null,
+      finishedAt: null,
+      pausedAt: null,
+      totalPausedSeconds: 0,
       clientId: "other-client",
     });
 
     expect(await startSession("s1", "client-1")).toEqual({ ok: false, error: "Session not found" });
     expect(prisma.workoutSession.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("pauseSession", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("stamps pausedAt without finishing", async () => {
+    const { pauseSession } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      startedAt: new Date("2026-07-01T10:00:00Z"),
+      finishedAt: null,
+      pausedAt: null,
+      clientId: "client-1",
+    });
+
+    expect(await pauseSession("s1", "client-1")).toEqual({ ok: true });
+    const call = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.data).toEqual({ pausedAt: expect.any(Date) });
+    expect(call.data.finishedAt).toBeUndefined();
+  });
+
+  it("is idempotent when already paused", async () => {
+    const { pauseSession } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      startedAt: new Date("2026-07-01T10:00:00Z"),
+      finishedAt: null,
+      pausedAt: new Date("2026-07-01T10:10:00Z"),
+      clientId: "client-1",
+    });
+
+    expect(await pauseSession("s1", "client-1")).toEqual({ ok: true });
+    expect(prisma.workoutSession.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a session that has not started", async () => {
+    const { pauseSession } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      startedAt: null,
+      finishedAt: null,
+      pausedAt: null,
+      clientId: "client-1",
+    });
+
+    expect(await pauseSession("s1", "client-1")).toEqual({
+      ok: false,
+      error: "Session has not started",
+    });
   });
 });
 
@@ -202,11 +343,33 @@ describe("markSessionFinished", () => {
   it("does not fabricate a startedAt, which would render a false 0 min", async () => {
     const { markSessionFinished } = await import("./sessions");
     const { prisma } = await import("@/lib/db");
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      pausedAt: null,
+      totalPausedSeconds: 0,
+    });
 
     await markSessionFinished("s1", "client-1");
 
     const call = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(call.data).toEqual({ finishedAt: expect.any(Date) });
+    expect(call.data.finishedAt).toBeInstanceOf(Date);
+    expect(call.data.startedAt).toBeUndefined();
+    expect(call.data.pausedAt).toBeNull();
+  });
+
+  it("folds an open pause window into totalPausedSeconds on finish", async () => {
+    const { markSessionFinished } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    const pausedAt = new Date(Date.now() - 90_000);
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      pausedAt,
+      totalPausedSeconds: 10,
+    });
+
+    await markSessionFinished("s1", "client-1");
+
+    const call = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.data.pausedAt).toBeNull();
+    expect(call.data.totalPausedSeconds).toBeGreaterThanOrEqual(100);
   });
 });
 

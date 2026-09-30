@@ -8,16 +8,26 @@ export type AuthUser = {
   name?: string | null;
   image?: string | null;
   role?: string;
+  mustChangePassword?: boolean;
+};
+
+export type RequireUserOptions = {
+  /** Allow access while a temporary password must still be changed. */
+  allowPasswordChange?: boolean;
 };
 
 /**
  * Require an authenticated user. Redirects to /login if not signed in.
+ * Users with mustChangePassword are sent to change-password unless allowPasswordChange.
  */
-export async function requireUser(): Promise<AuthUser> {
+export async function requireUser(options?: RequireUserOptions): Promise<AuthUser> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const user = session.user as AuthUser;
   if (!user.role) redirect("/login");
+  if (user.mustChangePassword && !options?.allowPasswordChange) {
+    redirect("/manage-account/change-password?required=1");
+  }
   return user;
 }
 
