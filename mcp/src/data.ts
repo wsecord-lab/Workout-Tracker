@@ -1,12 +1,19 @@
 import { prisma } from "./db";
+import { enforceWriteLimit, recordChange } from "./safeguards";
 import { aggregateProgress, kgToLb, rangeStart, type MetricsRangeKey } from "./metrics";
-import { assertClientOwned, type TrainerContext } from "./trainer";
+import {
+  assertClientOwned,
+  assertTrainer,
+  clientScope,
+  trainerIdFor,
+  type Actor as TrainerContext,
+} from "./trainer";
 
-function normalizeExerciseName(name: string): string {
+export function normalizeExerciseName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function normalizeSessionName(name: string | null | undefined): string | null {
+export function normalizeSessionName(name: string | null | undefined): string | null {
   if (name == null) return null;
   const n = name.trim().replace(/\s+/g, " ").toLowerCase();
   return n.length ? n : null;
@@ -14,7 +21,7 @@ function normalizeSessionName(name: string | null | undefined): string | null {
 
 export async function listClients(trainer: TrainerContext) {
   const clients = await prisma.client.findMany({
-    where: { trainerId: trainer.id },
+    where: clientScope(trainer),
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -57,7 +64,7 @@ export async function listClients(trainer: TrainerContext) {
 }
 
 export async function getClient(trainer: TrainerContext, clientId: string) {
-  await assertClientOwned(trainer.id, clientId);
+  await assertClientOwned(trainer, clientId);
   const client = await prisma.client.findUniqueOrThrow({
     where: { id: clientId },
     select: {
@@ -80,7 +87,7 @@ export async function listSessions(
   clientId: string,
   limit: number
 ) {
-  await assertClientOwned(trainer.id, clientId);
+  await assertClientOwned(trainer, clientId);
   const sessions = await prisma.workoutSession.findMany({
     where: { clientId },
     orderBy: { date: "desc" },
@@ -112,7 +119,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
   const session = await prisma.workoutSession.findFirst({
     where: {
       id: sessionId,
-      client: { trainerId: trainer.id },
+      client: clientScope(trainer),
     },
     select: {
       id: true,
@@ -147,7 +154,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
       },
     },
   });
-  if (!session) throw new Error(`Session ${sessionId} not found for this trainer.`);
+  if (!session) throw new Error(`Session ${sessionId} not found for this account.`);
 
   return {
     id: session.id,
@@ -182,7 +189,7 @@ export async function getProgress(
   clientId: string,
   range: MetricsRangeKey
 ) {
-  await assertClientOwned(trainer.id, clientId);
+  await assertClientOwned(trainer, clientId);
   const since = rangeStart(range);
   const sessions = await prisma.workoutSession.findMany({
     where: { clientId, date: { gte: since } },
@@ -216,6 +223,7 @@ export async function getProgress(
 }
 
 export async function listTemplates(trainer: TrainerContext, includeArchived: boolean) {
+  assertTrainer(trainer);
   const templates = await prisma.workoutTemplate.findMany({
     where: {
       trainerId: trainer.id,
@@ -240,6 +248,7 @@ export async function listTemplates(trainer: TrainerContext, includeArchived: bo
 }
 
 export async function getTemplate(trainer: TrainerContext, templateId: string) {
+  assertTrainer(trainer);
   const template = await prisma.workoutTemplate.findFirst({
     where: { id: templateId, trainerId: trainer.id },
     select: {
@@ -283,7 +292,8 @@ export async function createSessionFromTemplate(
     date?: string;
   }
 ) {
-  await assertClientOwned(trainer.id, args.clientId);
+  assertTrainer(trainer);
+  await assertClientOwned(trainer, args.clientId);
   const template = await prisma.workoutTemplate.findFirst({
     where: {
       id: args.templateId,
@@ -293,6 +303,7 @@ export async function createSessionFromTemplate(
     include: { items: { orderBy: { orderIndex: "asc" } } },
   });
   if (!template) throw new Error("Template not found or archived.");
+  await enforceWriteLimit(trainer);
 
   const name = args.sessionName?.trim() || template.name;
   const date = args.date ? new Date(`${args.date}T12:00:00.000Z`) : new Date();
@@ -306,6 +317,13 @@ export async function createSessionFromTemplate(
         date,
       },
       select: { id: true },
+    });
+    await recordChange(tx, trainer, {
+      tool: "create_session_from_template",
+      entityType: "session",
+      entityId: created.id,
+      sessionId: created.id,
+      after: { name, date: date.toISOString(), templateId: template.id },
     });
 
     for (let i = 0; i < template.items.length; i++) {
@@ -367,12 +385,13 @@ export async function createPlannedSession(
     exercises: PlannedExerciseInput[];
   }
 ) {
-  await assertClientOwned(trainer.id, args.clientId);
+  await assertClientOwned(trainer, args.clientId);
   if (!args.exercises.length) throw new Error("Provide at least one exercise.");
 
   const name = args.sessionName.trim();
   if (!name) throw new Error("sessionName is required.");
   const date = args.date ? new Date(`${args.date}T12:00:00.000Z`) : new Date();
+  await enforceWriteLimit(trainer);
 
   const session = await prisma.$transaction(async (tx) => {
     const created = await tx.workoutSession.create({
@@ -384,6 +403,13 @@ export async function createPlannedSession(
         notes: args.notes?.trim() || null,
       },
       select: { id: true },
+    });
+    await recordChange(tx, trainer, {
+      tool: "create_planned_session",
+      entityType: "session",
+      entityId: created.id,
+      sessionId: created.id,
+      after: { name, date: date.toISOString() },
     });
 
     for (let i = 0; i < args.exercises.length; i++) {
@@ -431,8 +457,10 @@ export async function createPlannedSession(
 }
 
 export async function listCatalog(trainer: TrainerContext) {
+  const catalogOwnerId = await trainerIdFor(trainer);
+  if (!catalogOwnerId) return [];
   const items = await prisma.trainerExerciseCatalogItem.findMany({
-    where: { trainerId: trainer.id, isArchived: false },
+    where: { trainerId: catalogOwnerId, isArchived: false },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
     take: 500,
