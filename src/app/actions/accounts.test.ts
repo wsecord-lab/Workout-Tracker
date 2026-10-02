@@ -11,10 +11,15 @@ const passwordResetTokenFindUnique = vi.fn();
 const passwordResetTokenCreate = vi.fn();
 const passwordResetTokenUpdate = vi.fn();
 const transaction = vi.fn();
+const apiKeyUpdateMany = vi.fn();
+const signInMock = vi.fn();
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/auth", () => ({
   auth: vi.fn(),
+  get signIn() {
+    return signInMock;
+  },
 }));
 vi.mock("@/lib/authz", () => ({
   requireTrainer: vi.fn().mockResolvedValue({ id: "trainer-1", role: "TRAINER" }),
@@ -64,6 +69,11 @@ vi.mock("@/lib/db", () => ({
       },
       get update() {
         return passwordResetTokenUpdate;
+      },
+    },
+    apiKey: {
+      get updateMany() {
+        return apiKeyUpdateMany;
       },
     },
     get $transaction() {
@@ -365,5 +375,66 @@ describe("cross-trainer protection", () => {
     expect(clientFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: "user-x", trainerId: "trainer-1" } })
     );
+  });
+});
+
+describe("password changes end existing sign-ins", () => {
+  it("changeMyPassword bumps sessionVersion, disconnects AI apps, and re-signs-in this device", async () => {
+    const { changeMyPassword, auth } = await loadAccounts();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue(trainerSession());
+    userFindUnique.mockResolvedValue({
+      id: "trainer-1",
+      email: "coach",
+      passwordHash: "hashed:oldpassword",
+    });
+
+    const fd = new FormData();
+    fd.set("currentPassword", "oldpassword");
+    fd.set("newPassword", "newpassword1");
+    const result = await changeMyPassword(fd);
+
+    expect(result.ok).toBe(true);
+    expect(userUpdate.mock.calls[0][0].data.sessionVersion).toEqual({ increment: 1 });
+    expect(apiKeyUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "trainer-1", oauthClientId: { not: null }, revokedAt: null },
+      })
+    );
+    expect(signInMock).toHaveBeenCalledWith(
+      "credentials",
+      expect.objectContaining({ username: "coach", password: "newpassword1", redirect: false })
+    );
+  });
+
+  it("still succeeds if re-signing-in fails", async () => {
+    const { changeMyPassword, auth } = await loadAccounts();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue(trainerSession());
+    userFindUnique.mockResolvedValue({ id: "trainer-1", email: "coach", passwordHash: "hashed:oldpassword" });
+    signInMock.mockRejectedValueOnce(new Error("nope"));
+
+    const fd = new FormData();
+    fd.set("currentPassword", "oldpassword");
+    fd.set("newPassword", "newpassword1");
+
+    expect((await changeMyPassword(fd)).ok).toBe(true);
+  });
+
+  it("a trainer resetting a client's temp password signs that client out everywhere", async () => {
+    const { createClientLoginAndLink, auth } = await loadAccounts();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue(trainerSession());
+    clientFindUnique.mockResolvedValue({ id: "client-1", userId: null, trainerId: "trainer-1" });
+    userFindUnique.mockResolvedValue({ id: "user-existing", email: "pat", role: "CLIENT" });
+    clientFindFirst.mockResolvedValue(null);
+    userUpdate.mockResolvedValue({ id: "user-existing", email: "pat", role: "CLIENT" });
+
+    const fd = new FormData();
+    fd.set("username", "pat");
+    fd.set("tempPassword", "temporary1");
+    fd.set("linkMode", "existing");
+    fd.set("existingClientId", "client-1");
+    await createClientLoginAndLink(fd);
+
+    expect(userUpdate.mock.calls[0][0].data.sessionVersion).toEqual({ increment: 1 });
+    expect(apiKeyUpdateMany).toHaveBeenCalled();
   });
 });

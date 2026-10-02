@@ -13,6 +13,8 @@ function str(f: FormData, k: string): string | undefined {
 export async function decideAuthorization(formData: FormData) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  // A temporary password set by a trainer must be replaced before connecting any app.
+  if (session.user.mustChangePassword) redirect("/manage-account/change-password?required=1");
 
   const check = await checkAuthorizeRequest({
     response_type: str(formData, "response_type"),
