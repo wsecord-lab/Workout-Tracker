@@ -32,7 +32,18 @@ Every connection acts as **one account**. A trainer key sees that trainer's clie
 
 ## Remote access (Claude web/mobile, ChatGPT, Grok…)
 
-The app serves the same tools over HTTPS at `POST /api/mcp`. Each caller sends `Authorization: Bearer wt_…`.
+The app serves the same tools over HTTPS at `POST /api/mcp`. There are two ways in, and both end up as a Bearer token tied to one account:
+
+### 1. Sign in (recommended; what Claude's "Add custom connector" uses)
+Add the connector with just the URL `https://<your-site>/api/mcp`. Claude discovers the sign-in flow on its own, opens `/oauth/authorize`, and the person signs in with their normal app login and clicks **Allow**. A trainer gets trainer access; a client gets only their own data.
+
+- Standard OAuth 2.1 + PKCE (S256), dynamic client registration; discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
+- Access tokens last 1 hour; refresh tokens last 90 days and rotate on every use.
+- Tokens are stored hashed in `ApiKey`; revoke one with `scripts/create-api-key.ts revoke <id>` (see `list`).
+- Optional env `PUBLIC_BASE_URL` overrides the site address advertised in the discovery documents.
+
+### 2. Manual API key (Cursor, Claude Code, scripts)
+Send `Authorization: Bearer wt_…`.
 
 ```bash
 # create a key for an account (printed once — copy it immediately)
