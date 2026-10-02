@@ -60,3 +60,15 @@ describe("api keys", () => {
     expect(findUnique.mock.calls[0][0].where.keyHash).toBe(hashApiKey("wt_good"));
   });
 });
+
+describe("expired sign-in tokens", () => {
+  it("are rejected", async () => {
+    findUnique.mockResolvedValueOnce({
+      id: "k1",
+      revokedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+      user: { id: "u1", email: "a@b.c", name: null, role: "CLIENT" },
+    });
+    expect(await authenticateKey("wt_expired")).toBeNull();
+  });
+});

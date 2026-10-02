@@ -4,9 +4,9 @@ import { useState } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import { signInAction } from "./login-action";
 
-type Props = { errorFromUrl?: string };
+type Props = { errorFromUrl?: string; next?: string };
 
-export function LoginForm({ errorFromUrl }: Props) {
+export function LoginForm({ errorFromUrl, next }: Props) {
   const [error, setError] = useState<string | null>(errorFromUrl ?? null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -18,7 +18,7 @@ export function LoginForm({ errorFromUrl }: Props) {
     const formData = new FormData(form);
     const result = await signInAction(formData);
     if (result.ok) {
-      window.location.href = "/auth/redirect";
+      window.location.href = next ?? "/auth/redirect";
       return;
     }
     setError(result.error);

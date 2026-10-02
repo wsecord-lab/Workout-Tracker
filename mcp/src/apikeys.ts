@@ -28,10 +28,12 @@ export async function authenticateKey(key: string | null): Promise<Actor | null>
     select: {
       id: true,
       revokedAt: true,
+      expiresAt: true,
       user: { select: { id: true, email: true, name: true, role: true } },
     },
   });
   if (!row || row.revokedAt) return null;
+  if (row.expiresAt && row.expiresAt < new Date()) return null;
 
   // Best effort: a failed timestamp update must not block the request.
   prisma.apiKey

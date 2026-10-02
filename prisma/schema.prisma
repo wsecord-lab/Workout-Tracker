@@ -40,6 +40,7 @@ model User {
   auditLogs     AuditLog[]
   apiKeys       ApiKey[]
   mcpChanges    McpChange[]
+  oauthCodes    OAuthCode[]
 }
 
 model Account {
@@ -328,6 +329,13 @@ model ApiKey {
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
+  /// Sign-in (OAuth) access tokens expire; manually created keys leave this null.
+  expiresAt  DateTime?
+  /// SHA-256 of the refresh token issued with an OAuth access token.
+  refreshHash String?  @unique
+  refreshExpiresAt DateTime?
+  /// Which OAuth client (e.g. Claude) this token was issued to. Null for manual keys.
+  oauthClientId String?
   changes    McpChange[]
 
   @@index([userId])
@@ -352,4 +360,29 @@ model McpChange {
 
   @@index([userId, createdAt])
   @@index([entityType, entityId])
+}
+
+/// An AI app (e.g. Claude) that registered itself so people can sign in through it.
+model OAuthClient {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  clientName   String?
+  redirectUris String[]
+  createdAt    DateTime @default(now())
+}
+
+/// Short-lived, single-use code handed back after a person clicks Allow. Only its hash is stored.
+model OAuthCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  clientId      String
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  codeChallenge String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
 }

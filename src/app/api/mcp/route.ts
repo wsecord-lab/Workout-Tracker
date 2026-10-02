@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { authenticateKey, bearerToken } from "../../../../mcp/src/apikeys";
+import { publicOrigin } from "../../../../mcp/src/oauth";
 import { createServer } from "../../../../mcp/src/server";
 
 // Remote MCP endpoint. AI apps (Claude, ChatGPT, Grok, Cursor…) connect here with
@@ -17,12 +18,18 @@ function json(status: number, body: unknown, headers?: Record<string, string>) {
 }
 
 export async function POST(req: Request) {
-  const actor = await authenticateKey(bearerToken(req.headers.get("authorization")));
+  const token = bearerToken(req.headers.get("authorization"));
+  const actor = await authenticateKey(token);
   if (!actor) {
+    // The resource_metadata pointer is how Claude and other apps discover the sign-in flow.
+    const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource/api/mcp`;
+    const challenge = token
+      ? `Bearer resource_metadata="${metadata}", error="invalid_token"`
+      : `Bearer resource_metadata="${metadata}"`;
     return json(
       401,
-      { jsonrpc: "2.0", error: { code: -32001, message: "Missing or invalid API key." }, id: null },
-      { "www-authenticate": 'Bearer realm="workout-tracker"' }
+      { jsonrpc: "2.0", error: { code: -32001, message: "Missing or invalid credentials." }, id: null },
+      { "www-authenticate": challenge }
     );
   }
 
