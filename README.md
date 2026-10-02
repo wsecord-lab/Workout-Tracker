@@ -50,7 +50,7 @@ npm run mcp   # stdio server (Cursor launches this via .cursor/mcp.json)
 
 See [mcp/README.md](mcp/README.md) for tools and Claude Desktop config.
 
-**Removed / unused:** `ACCESS_TOKEN` and the old shared-secret access gate (`x-access-token` / `access_token` cookie) are **not enforced**. Auth is Auth.js only. `ACCESS_TOKEN` may still appear in `.env.example` / `getEnv()` as a leftover optional read — setting it has no effect on middleware.
+**Removed / unused:** `ACCESS_TOKEN` and the old shared-secret access gate (`x-access-token` / `access_token` cookie) are **not enforced**. Auth is Auth.js only. `ACCESS_TOKEN` may still appear in `.env.example` / `getEnv()` as a leftover optional read — setting it has no effect on the request proxy (`src/proxy.ts`).
 
 There is **no Excel export** in this codebase. Do not rely on `/api/export/excel` or “Export to Excel” docs from older notes.
 
