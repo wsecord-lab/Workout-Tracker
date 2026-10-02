@@ -6,7 +6,7 @@
     "dev": "next dev",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "prisma migrate deploy && prisma db seed && next build",
+    "build": "prisma migrate deploy && next build",
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",

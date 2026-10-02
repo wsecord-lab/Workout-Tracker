@@ -8,9 +8,25 @@ loadEnv({ path: resolve(process.cwd(), ".env.local"), override: true });
 
 const prisma = new PrismaClient();
 
+/** Demo accounts below have public passwords. Only ever seed a database on this computer. */
+function assertLocalDatabase() {
+  const url = process.env.DATABASE_URL ?? "";
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {}
+  if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(host)) {
+    console.error(
+      `Refusing to seed: DATABASE_URL points at "${host || "an unknown host"}", not a local database. ` +
+        "The seed creates demo accounts with public passwords."
+    );
+    process.exit(1);
+  }
+}
+
 const EXAMPLE_CLIENT_EMAIL = "client@example.com";
 const EXAMPLE_CLIENT_PASSWORD = "client123";
-const EXAMPLE_TRAINER_EMAIL = "davisvalenciam@gmail.com";
+const EXAMPLE_TRAINER_EMAIL = "demo-trainer@example.com";
 const EXAMPLE_TRAINER_PASSWORD = "trainer123";
 
 /** Simple test credentials (same password for both). Use for quick testing. */
@@ -21,6 +37,8 @@ const TEST_PASSWORD = "test123";
 const OLD_EXAMPLE_TRAINER_EMAIL = "trainer@example.com";
 
 async function main() {
+  assertLocalDatabase();
+
   // Remove old example trainer if present (replaced by new trainer profile)
   await prisma.user.deleteMany({ where: { email: OLD_EXAMPLE_TRAINER_EMAIL } });
 
@@ -31,10 +49,10 @@ async function main() {
     create: {
       email: EXAMPLE_TRAINER_EMAIL,
       passwordHash: trainerPasswordHash,
-      name: "Davis Valencia",
+      name: "Demo Trainer",
       role: "TRAINER",
     },
-    update: { passwordHash: trainerPasswordHash },
+    update: {},
   });
   const trainer = await prisma.user.findUnique({
     where: { email: EXAMPLE_TRAINER_EMAIL },
@@ -52,7 +70,7 @@ async function main() {
       name: "Demo Client",
       role: "CLIENT",
     },
-    update: { passwordHash: clientPasswordHash },
+    update: {},
   });
 
   let demoClient = await prisma.client.findFirst({
@@ -237,7 +255,7 @@ async function main() {
       name: "Test Trainer",
       role: "TRAINER",
     },
-    update: { passwordHash: testPasswordHash },
+    update: {},
   });
   const testClientUser = await prisma.user.upsert({
     where: { email: TEST_CLIENT_EMAIL },
@@ -247,7 +265,7 @@ async function main() {
       name: "Test Client",
       role: "CLIENT",
     },
-    update: { passwordHash: testPasswordHash },
+    update: {},
   });
   const testClientProfile = await prisma.client.findFirst({
     where: { userId: testClientUser.id },

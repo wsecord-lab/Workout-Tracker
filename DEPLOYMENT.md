@@ -79,7 +79,7 @@ CI (`.github/workflows/ci.yml`) runs Vitest and TypeScript `tsc --noEmit` on pus
 
 Access is gated by **Auth.js** (credentials provider + JWT session cookie). Users must sign in at `/login`. Middleware redirects unauthenticated requests away from protected routes (`/`, `/clients`, `/dashboard`, `/charts`, `/settings`, `/manage-account`).
 
-Create at least one trainer (locally with `npm run create:trainer`, or via seed / DB) before relying on production login.
+Create at least one trainer with `npm run create:trainer` (the seed only runs against a local database) before relying on production login.
 
 ### Obsolete: `ACCESS_TOKEN` access gate
 
