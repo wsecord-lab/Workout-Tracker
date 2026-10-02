@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
+import { auth, signIn } from "@/auth";
 import { prisma } from "@/lib/db";
 import { requireTrainer } from "@/lib/authz";
 import {
@@ -15,6 +15,20 @@ import { Role } from "@prisma/client";
 
 const TRAINER = Role.TRAINER;
 const CLIENT = Role.CLIENT;
+
+/**
+ * After any password change: every sign-in issued under the old password stops
+ * working (sessionVersion), and AI apps connected via sign-in are disconnected.
+ * Keys created by hand with scripts/create-api-key.ts are left alone.
+ */
+const END_EXISTING_SIGN_INS = { sessionVersion: { increment: 1 } } as const;
+
+function revokeAppSignIns(userId: string) {
+  return prisma.apiKey.updateMany({
+    where: { userId, oauthClientId: { not: null }, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
 
 /** Normalize username for lookups (trim + lowercase). */
 function normalizeUsername(username: string): string {
@@ -122,8 +136,10 @@ export async function createClientLoginAndLink(
       data: {
         passwordHash,
         mustChangePassword: true,
+        ...END_EXISTING_SIGN_INS,
       },
     });
+    await revokeAppSignIns(user.id);
   } else {
     user = await prisma.user.create({
       data: {
@@ -214,7 +230,7 @@ export async function changeMyPassword(
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, passwordHash: true },
+    select: { id: true, email: true, passwordHash: true },
   });
   if (!user) {
     return { ok: false, errors: { _: "User not found." } };
@@ -230,8 +246,17 @@ export async function changeMyPassword(
     data: {
       passwordHash: await hashPassword(newPassword),
       mustChangePassword: false,
+      ...END_EXISTING_SIGN_INS,
     },
   });
+  await revokeAppSignIns(user.id);
+
+  // That signed out every device, including this one; sign this one back in with the new password.
+  try {
+    await signIn("credentials", { username: user.email, password: newPassword, redirect: false });
+  } catch {
+    // Worst case they land on the login page and sign in with the new password.
+  }
 
   revalidatePath("/");
   revalidatePath("/manage-account");
@@ -284,8 +309,10 @@ export async function resetPasswordWithToken(
       data: {
         passwordHash: await hashPassword(newPassword),
         mustChangePassword: false,
+        ...END_EXISTING_SIGN_INS,
       },
     }),
+    revokeAppSignIns(record.userId),
     prisma.passwordResetToken.update({
       where: { id: record.id },
       data: { used: true },

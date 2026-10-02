@@ -1,8 +1,25 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import type { Role } from "@prisma/client";
+import {
+  checkLoginAllowed,
+  clearLoginFailures,
+  clientIp,
+  recordLoginFailure,
+} from "@/lib/login-limit";
+
+/** Thrown when sign-in is paused for too many failed attempts. `code` ends up in the URL, so it says nothing sensitive. */
+export class TooManyLoginAttempts extends CredentialsSignin {
+  code = "rate_limited";
+  constructor(public retryAfterMinutes: number) {
+    super();
+  }
+}
+
+/** Compared against when the username doesn't exist, so a wrong username takes as long as a wrong password. */
+const DUMMY_PASSWORD_HASH = "$2b$10$UKmeCly/z85cCsdInYVmd.sGdSP6hGZiIFEgw35DrLJOtUxMhoYUC";
 
 declare module "next-auth" {
   interface Session {
@@ -32,17 +49,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.username || typeof credentials.username !== "string") return null;
         if (!credentials?.password || typeof credentials.password !== "string") return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.username.trim().toLowerCase() },
-        });
-        if (!user?.passwordHash) return null;
+        const username = credentials.username.trim().toLowerCase();
+        const ip = clientIp(request?.headers);
+        const limit = await checkLoginAllowed(username, ip);
+        if (!limit.allowed) throw new TooManyLoginAttempts(limit.retryAfterMinutes);
 
-        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!valid) return null;
+        const user = await prisma.user.findUnique({ where: { email: username } });
+        const valid = await bcrypt.compare(
+          credentials.password,
+          user?.passwordHash || DUMMY_PASSWORD_HASH
+        );
+        if (!user?.passwordHash || !valid) {
+          await recordLoginFailure(username, ip);
+          return null;
+        }
+        await clearLoginFailures(username, ip);
 
         let clientProfileId: string | null = null;
         if (user.role === "CLIENT") {
@@ -61,27 +86,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.role,
           clientProfileId,
           mustChangePassword: user.mustChangePassword,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        (token as { role?: Role }).role = (user as { role?: Role }).role;
         const u = user as {
+          role?: Role;
           clientProfileId?: string | null;
           mustChangePassword?: boolean;
+          sessionVersion?: number;
         };
-        if (u.clientProfileId !== undefined) {
-          token.clientProfileId = u.clientProfileId;
-        }
-        if (u.mustChangePassword !== undefined) {
-          (token as { mustChangePassword?: boolean }).mustChangePassword =
-            u.mustChangePassword;
-        }
+        token.role = u.role;
+        token.clientProfileId = u.clientProfileId ?? null;
+        token.mustChangePassword = u.mustChangePassword ?? false;
+        token.sessionVersion = u.sessionVersion ?? 0;
+        return token;
       }
+      // Every later request: drop the sign-in if the account was deleted or its
+      // password changed since this sign-in was issued (sessionVersion bumped).
+      const dbUser = await prisma.user.findUnique({
+        where: { id: token.id as string },
+        select: { role: true, mustChangePassword: true, sessionVersion: true },
+      });
+      if (!dbUser || dbUser.sessionVersion !== ((token.sessionVersion as number | undefined) ?? 0)) {
+        return null;
+      }
+      token.role = dbUser.role;
+      token.mustChangePassword = dbUser.mustChangePassword;
       return token;
     },
     async session({ session, token }) {
@@ -91,17 +127,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         let clientProfileId: string | null =
           (token.clientProfileId as string | null | undefined) ?? null;
-        let mustChangePassword =
+        // Refreshed from the database in the jwt callback above.
+        const mustChangePassword =
           (token as { mustChangePassword?: boolean }).mustChangePassword ?? false;
-
-        // Refresh flags from DB so password-change clears without requiring re-login.
-        const dbUser = await prisma.user.findUnique({
-          where: { id: session.user.id },
-          select: { mustChangePassword: true },
-        });
-        if (dbUser) {
-          mustChangePassword = dbUser.mustChangePassword;
-        }
 
         if (session.user.role === "CLIENT" && !clientProfileId) {
           const profile = await prisma.client.findFirst({

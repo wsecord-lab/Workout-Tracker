@@ -39,6 +39,8 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     redirect(`/login?callbackUrl=${encodeURIComponent(`/oauth/authorize?${back.toString()}`)}`);
   }
 
+  if (session.user.mustChangePassword) redirect("/manage-account/change-password?required=1");
+
   const user = session.user as { email?: string | null; name?: string | null; role?: string };
   const appName = check.clientName ?? "An AI app";
 

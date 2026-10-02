@@ -23,6 +23,8 @@ model User {
   role          Role
   /// True when a trainer set a temporary password; cleared after the user changes it.
   mustChangePassword Boolean @default(false)
+  /// Bumped on password change; sign-ins issued under an older number stop working.
+  sessionVersion Int      @default(0)
   createdAt     DateTime  @default(now())
   emailVerified DateTime?
   image         String?
@@ -385,4 +387,15 @@ model OAuthCode {
   createdAt     DateTime  @default(now())
 
   @@index([expiresAt])
+}
+
+/// One failed sign-in (or OAuth registration) per row, for rate limiting.
+/// `key` is a SHA-256 hash, so usernames and IP addresses are never stored as-is.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@index([createdAt])
 }
