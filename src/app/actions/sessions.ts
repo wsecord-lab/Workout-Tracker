@@ -363,8 +363,9 @@ export async function updateSessionName(sessionId: string, clientId: string, nam
     name != null && name.trim() !== ""
       ? sanitizeName(name, SESSION_NAME_MAX_LENGTH)
       : null;
+  // clientId in the filter: assertClientAccess only vouched for the client, not this session.
   await prisma.workoutSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, clientId },
     // Kept in lockstep with `name` — a stale normalizedName silently breaks
     // "copy last <name> workout" and the same-name duration average.
     data: { name: sanitized, normalizedName: normalizeSessionName(sanitized) },
@@ -382,7 +383,7 @@ export async function updateSessionNotes(
   await assertClientAccess(clientId);
   const sanitized = sanitizeNotes(notes, NOTES_MAX_LENGTH);
   await prisma.workoutSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, clientId },
     data: { notes: sanitized },
   });
   revalidateClientWorkoutViews(clientId);
@@ -473,18 +474,19 @@ export async function markSessionFinished(sessionId: string, clientId: string): 
   // "—" and let someone type the real number.
   const session = await prisma.workoutSession.findUnique({
     where: { id: sessionId },
-    select: { pausedAt: true, totalPausedSeconds: true },
+    select: { pausedAt: true, totalPausedSeconds: true, clientId: true },
   });
+  if (!session || session.clientId !== clientId) return;
   const now = new Date();
-  let totalPausedSeconds = session?.totalPausedSeconds ?? 0;
-  if (session?.pausedAt) {
+  let totalPausedSeconds = session.totalPausedSeconds;
+  if (session.pausedAt) {
     totalPausedSeconds += Math.max(
       0,
       Math.round((now.getTime() - session.pausedAt.getTime()) / 1000)
     );
   }
   await prisma.workoutSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, clientId },
     data: {
       finishedAt: now,
       pausedAt: null,
@@ -547,7 +549,7 @@ export async function getSessionDurationEstimate(
 export async function deleteSession(sessionId: string, clientId: string): Promise<void> {
   await assertClientAccess(clientId);
   await prisma.workoutSession.delete({
-    where: { id: sessionId },
+    where: { id: sessionId, clientId },
   });
   await invalidateClientMetricsCache(clientId);
   revalidateClientWorkoutViews(clientId);

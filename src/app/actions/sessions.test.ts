@@ -18,6 +18,7 @@ vi.mock("@/lib/db", () => {
       create: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
     workoutTemplate: {
       findUnique: vi.fn(),
@@ -346,6 +347,7 @@ describe("markSessionFinished", () => {
     (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       pausedAt: null,
       totalPausedSeconds: 0,
+      clientId: "client-1",
     });
 
     await markSessionFinished("s1", "client-1");
@@ -363,6 +365,7 @@ describe("markSessionFinished", () => {
     (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       pausedAt,
       totalPausedSeconds: 10,
+      clientId: "client-1",
     });
 
     await markSessionFinished("s1", "client-1");
@@ -370,6 +373,41 @@ describe("markSessionFinished", () => {
     const call = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(call.data.pausedAt).toBeNull();
     expect(call.data.totalPausedSeconds).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe("session ownership", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("markSessionFinished ignores a session that belongs to another client", async () => {
+    const { markSessionFinished } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+    (prisma.workoutSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      pausedAt: null,
+      totalPausedSeconds: 0,
+      clientId: "someone-else",
+    });
+
+    await markSessionFinished("s1", "client-1");
+
+    expect(prisma.workoutSession.update).not.toHaveBeenCalled();
+  });
+
+  it("scopes rename, notes and delete to the checked client", async () => {
+    const { updateSessionName, updateSessionNotes, deleteSession } = await import("./sessions");
+    const { prisma } = await import("@/lib/db");
+
+    await updateSessionName("s1", "client-1", "Legs");
+    await updateSessionNotes("s1", "client-1", "felt good");
+    await deleteSession("s1", "client-1");
+
+    const updates = (prisma.workoutSession.update as ReturnType<typeof vi.fn>).mock.calls;
+    expect(updates[0][0].where).toEqual({ id: "s1", clientId: "client-1" });
+    expect(updates[1][0].where).toEqual({ id: "s1", clientId: "client-1" });
+    expect((prisma.workoutSession.delete as ReturnType<typeof vi.fn>).mock.calls[0][0].where).toEqual({
+      id: "s1",
+      clientId: "client-1",
+    });
   });
 });
 
