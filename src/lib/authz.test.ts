@@ -58,7 +58,7 @@ describe("assertTrainerOwnsClient", () => {
     await expect(assertTrainerOwnsClient("client-1")).rejects.toBe(REDIRECT_THROWN);
   });
 
-  it("does not redirect when client has null trainerId (legacy)", async () => {
+  it("redirects when the client has no trainer assigned", async () => {
     const { assertTrainerOwnsClient, auth, prisma } = await loadAuthz();
     (auth as ReturnType<typeof vi.fn>).mockResolvedValue({
       user: { id: "trainer-1", role: "TRAINER" },
@@ -66,7 +66,7 @@ describe("assertTrainerOwnsClient", () => {
     (prisma.client.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
       trainerId: null,
     });
-    await expect(assertTrainerOwnsClient("client-1")).resolves.not.toThrow();
+    await expect(assertTrainerOwnsClient("client-1")).rejects.toBe(REDIRECT_THROWN);
   });
 });
 
