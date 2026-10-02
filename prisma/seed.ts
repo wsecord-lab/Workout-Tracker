@@ -2,39 +2,54 @@ import { resolve } from "path";
 import { config as loadEnv } from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { randomBytes } from "crypto";
 
 loadEnv({ path: resolve(process.cwd(), ".env") });
 loadEnv({ path: resolve(process.cwd(), ".env.local"), override: true });
 
 const prisma = new PrismaClient();
 
-const EXAMPLE_CLIENT_EMAIL = "client@example.com";
-const EXAMPLE_CLIENT_PASSWORD = "client123";
-const EXAMPLE_TRAINER_EMAIL = "davisvalenciam@gmail.com";
-const EXAMPLE_TRAINER_PASSWORD = "trainer123";
+/** Demo accounts below have public passwords. Only ever seed a database on this computer. */
+function assertLocalDatabase() {
+  const url = process.env.DATABASE_URL ?? "";
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {}
+  if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(host)) {
+    console.error(
+      `Refusing to seed: DATABASE_URL points at "${host || "an unknown host"}", not a local database. ` +
+        "The seed creates demo accounts with public passwords."
+    );
+    process.exit(1);
+  }
+}
 
-/** Simple test credentials (same password for both). Use for quick testing. */
-const TEST_TRAINER_EMAIL = "trainer@test.com";
-const TEST_CLIENT_EMAIL = "client@test.com";
-const TEST_PASSWORD = "test123";
+const EXAMPLE_CLIENT_EMAIL = "client@example.com";
+const EXAMPLE_TRAINER_EMAIL = "demo-trainer@example.com";
+
+/** No passwords live in this file. Set SEED_DEMO_PASSWORD, or a random one is made and printed. */
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD || randomBytes(12).toString("base64url");
 
 const OLD_EXAMPLE_TRAINER_EMAIL = "trainer@example.com";
 
 async function main() {
+  assertLocalDatabase();
+
   // Remove old example trainer if present (replaced by new trainer profile)
   await prisma.user.deleteMany({ where: { email: OLD_EXAMPLE_TRAINER_EMAIL } });
 
   // —— Trainer login account (role TRAINER) ——
-  const trainerPasswordHash = await hash(EXAMPLE_TRAINER_PASSWORD, 10);
+  const trainerPasswordHash = await hash(DEMO_PASSWORD, 10);
   await prisma.user.upsert({
     where: { email: EXAMPLE_TRAINER_EMAIL },
     create: {
       email: EXAMPLE_TRAINER_EMAIL,
       passwordHash: trainerPasswordHash,
-      name: "Davis Valencia",
+      name: "Demo Trainer",
       role: "TRAINER",
     },
-    update: { passwordHash: trainerPasswordHash },
+    update: {},
   });
   const trainer = await prisma.user.findUnique({
     where: { email: EXAMPLE_TRAINER_EMAIL },
@@ -43,7 +58,7 @@ async function main() {
   const trainerId = trainer!.id;
 
   // —— Example client login account (role CLIENT) ——
-  const clientPasswordHash = await hash(EXAMPLE_CLIENT_PASSWORD, 10);
+  const clientPasswordHash = await hash(DEMO_PASSWORD, 10);
   const exampleUser = await prisma.user.upsert({
     where: { email: EXAMPLE_CLIENT_EMAIL },
     create: {
@@ -52,7 +67,7 @@ async function main() {
       name: "Demo Client",
       role: "CLIENT",
     },
-    update: { passwordHash: clientPasswordHash },
+    update: {},
   });
 
   let demoClient = await prisma.client.findFirst({
@@ -227,53 +242,10 @@ async function main() {
     console.log(`Added ${added} sample sessions for Alex Demo.`);
   }
 
-  // —— Test accounts (simple credentials, same password for both) ——
-  const testPasswordHash = await hash(TEST_PASSWORD, 10);
-  await prisma.user.upsert({
-    where: { email: TEST_TRAINER_EMAIL },
-    create: {
-      email: TEST_TRAINER_EMAIL,
-      passwordHash: testPasswordHash,
-      name: "Test Trainer",
-      role: "TRAINER",
-    },
-    update: { passwordHash: testPasswordHash },
-  });
-  const testClientUser = await prisma.user.upsert({
-    where: { email: TEST_CLIENT_EMAIL },
-    create: {
-      email: TEST_CLIENT_EMAIL,
-      passwordHash: testPasswordHash,
-      name: "Test Client",
-      role: "CLIENT",
-    },
-    update: { passwordHash: testPasswordHash },
-  });
-  const testClientProfile = await prisma.client.findFirst({
-    where: { userId: testClientUser.id },
-  });
-  if (!testClientProfile) {
-    await prisma.client.create({
-      data: {
-        name: "Test Client",
-        age: 30,
-        heightCm: 170,
-        bodyWeightKg: 70,
-        userId: testClientUser.id,
-        weightRecords: { create: { weightKg: 70 } },
-      },
-    });
-  }
-
-  console.log("\nExample trainer login:");
-  console.log("  Email:", EXAMPLE_TRAINER_EMAIL);
-  console.log("  Password:", EXAMPLE_TRAINER_PASSWORD);
-  console.log("\nExample client login:");
-  console.log("  Email:", EXAMPLE_CLIENT_EMAIL);
-  console.log("  Password:", EXAMPLE_CLIENT_PASSWORD);
-  console.log("\n--- Test accounts (same password for both) ---");
-  console.log("Trainer view:  Email:", TEST_TRAINER_EMAIL, " Password:", TEST_PASSWORD);
-  console.log("Client view:   Email:", TEST_CLIENT_EMAIL, " Password:", TEST_PASSWORD);
+  console.log("\nDemo logins (password applies to newly created accounts only):");
+  console.log("  Trainer:", EXAMPLE_TRAINER_EMAIL);
+  console.log("  Client: ", EXAMPLE_CLIENT_EMAIL);
+  console.log("  Password:", DEMO_PASSWORD);
   console.log("");
 
   // —— Original seed data (no auth users) — idempotent: only create if not present ——

@@ -77,6 +77,27 @@ export async function createClientLoginAndLink(
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
+  // Check the target client before touching any account, so a failed link
+  // never leaves someone's password changed.
+  if (linkMode === "existing") {
+    const client = await prisma.client.findUnique({
+      where: { id: existingClientId!.trim() },
+      select: { id: true, userId: true, trainerId: true },
+    });
+    if (!client) {
+      return { ok: false, errors: { existingClientId: "Client not found." } };
+    }
+    if (client.trainerId != null && client.trainerId !== session.user.id) {
+      return { ok: false, errors: { _: "You do not have access to this client." } };
+    }
+    if (client.userId != null) {
+      return {
+        ok: false,
+        errors: { existingClientId: "This client is already linked to a user account." },
+      };
+    }
+  }
+
   const passwordHash = await hashPassword(tempPassword);
 
   // Find or create User (CLIENT) — username stored in email column
@@ -118,22 +139,6 @@ export async function createClientLoginAndLink(
 
   if (linkMode === "existing") {
     const clientIdVal = existingClientId!.trim();
-    const client = await prisma.client.findUnique({
-      where: { id: clientIdVal },
-      select: { id: true, userId: true, trainerId: true },
-    });
-    if (!client) {
-      return { ok: false, errors: { existingClientId: "Client not found." } };
-    }
-    if (client.trainerId != null && client.trainerId !== session.user.id) {
-      return { ok: false, errors: { _: "You do not have access to this client." } };
-    }
-    if (client.userId != null) {
-      return {
-        ok: false,
-        errors: { existingClientId: "This client is already linked to a user account." },
-      };
-    }
     await prisma.client.update({
       where: { id: clientIdVal },
       data: { userId: user.id },
@@ -349,13 +354,19 @@ export async function listClientAccounts(): Promise<ClientAccountRow[]> {
 export async function removeClientAccount(
   userId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireTrainer();
+  const trainer = await requireTrainer();
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, role: true, email: true },
   });
   if (!user) return { ok: false, error: "User not found." };
   if (user.role !== CLIENT) return { ok: false, error: "Only client accounts can be removed." };
+  // Only the trainer whose client this login belongs to may remove it.
+  const owned = await prisma.client.findFirst({
+    where: { userId: user.id, trainerId: trainer.id },
+    select: { id: true },
+  });
+  if (!owned) return { ok: false, error: "User not found." };
   await prisma.user.delete({ where: { id: userId } });
   revalidatePath("/dashboard/manage-accounts");
   revalidatePath("/dashboard");

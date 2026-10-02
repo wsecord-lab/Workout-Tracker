@@ -331,3 +331,39 @@ describe("requestPasswordReset", () => {
     expect(result).toEqual({ ok: true });
   });
 });
+
+describe("cross-trainer protection", () => {
+  it("does not change a password when the client belongs to another trainer", async () => {
+    const { createClientLoginAndLink, auth } = await loadAccounts();
+    (auth as ReturnType<typeof vi.fn>).mockResolvedValue(trainerSession());
+    clientFindUnique.mockResolvedValue({ id: "client-9", userId: null, trainerId: "trainer-2" });
+    userFindUnique.mockResolvedValue({ id: "user-existing", email: "pat", role: "CLIENT" });
+
+    const fd = new FormData();
+    fd.set("username", "pat");
+    fd.set("tempPassword", "temporary1");
+    fd.set("linkMode", "existing");
+    fd.set("existingClientId", "client-9");
+
+    const result = await createClientLoginAndLink(fd);
+
+    expect(result.ok).toBe(false);
+    expect(userUpdate).not.toHaveBeenCalled();
+    expect(userCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to remove a login linked to another trainer's client", async () => {
+    const { removeClientAccount } = await loadAccounts();
+    const { prisma } = await import("@/lib/db");
+    userFindUnique.mockResolvedValue({ id: "user-x", role: "CLIENT", email: "x" });
+    clientFindFirst.mockResolvedValue(null);
+
+    const result = await removeClientAccount("user-x");
+
+    expect(result.ok).toBe(false);
+    expect(prisma.user.delete).not.toHaveBeenCalled();
+    expect(clientFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-x", trainerId: "trainer-1" } })
+    );
+  });
+});

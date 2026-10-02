@@ -73,14 +73,25 @@ export async function linkUserToClient(
   clientId: string,
   username: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireTrainer();
+  const trainer = await requireTrainer();
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) return { ok: false, error: "Client not found" };
+  if (client.trainerId != null && client.trainerId !== trainer.id) {
+    return { ok: false, error: "Client not found" };
+  }
+  if (client.userId != null) return { ok: false, error: "This client is already linked to an account" };
   const trimmed = username.trim().toLowerCase();
   if (!trimmed) return { ok: false, error: "Username is required" };
   const user = await prisma.user.findUnique({ where: { email: trimmed } });
   if (!user) return { ok: false, error: "User not found with that username" };
   if (user.role !== "CLIENT") return { ok: false, error: "User is not a client account" };
+  // One login per client: taking over a login already linked elsewhere would
+  // hand this client's data to whoever owns that login.
+  const alreadyLinked = await prisma.client.findFirst({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+  if (alreadyLinked) return { ok: false, error: "That account is already linked to a client" };
   await prisma.client.update({
     where: { id: clientId },
     data: { userId: user.id },
