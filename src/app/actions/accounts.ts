@@ -101,7 +101,7 @@ export async function createClientLoginAndLink(
     if (!client) {
       return { ok: false, errors: { existingClientId: "Client not found." } };
     }
-    if (client.trainerId != null && client.trainerId !== session.user.id) {
+    if (client.trainerId !== session.user.id) {
       return { ok: false, errors: { _: "You do not have access to this client." } };
     }
     if (client.userId != null) {

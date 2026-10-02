@@ -76,7 +76,7 @@ export async function linkUserToClient(
   const trainer = await requireTrainer();
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) return { ok: false, error: "Client not found" };
-  if (client.trainerId != null && client.trainerId !== trainer.id) {
+  if (client.trainerId !== trainer.id) {
     return { ok: false, error: "Client not found" };
   }
   if (client.userId != null) return { ok: false, error: "This client is already linked to an account" };

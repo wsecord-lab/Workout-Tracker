@@ -42,7 +42,7 @@ export async function requireTrainer(): Promise<AuthUser> {
 
 /**
  * Trainer may only access clients they own (client.trainerId === session.user.id).
- * Legacy clients with trainerId == null are allowed for any trainer (back compat).
+ * Clients with no trainer assigned are not visible to any trainer.
  */
 export async function assertTrainerOwnsClient(clientId: string): Promise<void> {
   const session = await auth();
@@ -54,7 +54,7 @@ export async function assertTrainerOwnsClient(clientId: string): Promise<void> {
     select: { trainerId: true },
   });
   if (!client) redirect("/");
-  if (client.trainerId != null && client.trainerId !== session.user.id) redirect("/");
+  if (client.trainerId !== session.user.id) redirect("/");
 }
 
 /**
@@ -99,8 +99,7 @@ export async function getSessionAccessForApi(sessionId: string): Promise<
   if (!workoutSession) return { allowed: false };
   const role = (session.user as AuthUser).role;
   if (role === "TRAINER") {
-    const trainerId = workoutSession.client?.trainerId ?? null;
-    if (trainerId != null && trainerId !== session.user.id) return { allowed: false };
+    if (workoutSession.client?.trainerId !== session.user.id) return { allowed: false };
     return { allowed: true, clientId: workoutSession.clientId };
   }
   if (role === "CLIENT") {
@@ -112,7 +111,7 @@ export async function getSessionAccessForApi(sessionId: string): Promise<
 
 /**
  * For API routes: non-redirecting mirror of assertClientAccess.
- * - TRAINER: allowed when they own the client (legacy trainerId == null allowed).
+ * - TRAINER: allowed when they own the client.
  * - CLIENT: allowed when Client.userId === session.user.id.
  * Returns a status so the route can respond 401/403/404 instead of redirecting.
  */
@@ -128,7 +127,7 @@ export async function getClientAccessForApi(
   if (!client) return { allowed: false, status: 404 };
   const role = (session.user as AuthUser).role;
   if (role === "TRAINER") {
-    if (client.trainerId != null && client.trainerId !== session.user.id) {
+    if (client.trainerId !== session.user.id) {
       return { allowed: false, status: 403 };
     }
     return { allowed: true };
