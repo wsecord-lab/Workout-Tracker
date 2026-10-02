@@ -13,7 +13,7 @@ function hasSessionCookie(req: NextRequest): boolean {
   return SESSION_COOKIE_NAMES.some((name) => req.cookies.get(name)?.value);
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   if (pathname.startsWith("/login") || pathname.startsWith("/api/auth") || pathname.startsWith("/auth/redirect")) {
     return NextResponse.next();

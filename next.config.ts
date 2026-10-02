@@ -11,6 +11,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Pin the project root so a stray lockfile in a parent folder can't confuse the build.
+  turbopack: { root: __dirname },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
