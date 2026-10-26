@@ -86,3 +86,34 @@ export function formatPlanVsActual(s: SetLike): string | null {
   if (!planDiffers(s)) return null;
   return `planned ${formatWeight(s.plannedWeightKg!)}×${s.plannedReps} → did ${formatWeight(s.weightKg)}×${s.reps}`;
 }
+
+type OrderedSetLike = Pick<SetLike, "weightKg" | "reps" | "completedAt"> & {
+  id: string;
+  orderIndex: number;
+};
+
+/**
+ * Sets that "apply to the rest" would change: the ones after `sourceId` in the
+ * same exercise that haven't been done yet and don't already match `values`.
+ * Completed sets are history and are never touched.
+ */
+export function findSetsToAutofill<T extends OrderedSetLike>(
+  sets: T[],
+  sourceId: string,
+  values: { weightKg: number; reps: number }
+): T[] {
+  const source = sets.find((s) => s.id === sourceId);
+  if (!source) return [];
+  return sets.filter(
+    (s) =>
+      s.id !== sourceId &&
+      s.orderIndex > source.orderIndex &&
+      isPlannedOnly(s) &&
+      !(sameWeight(s.weightKg, values.weightKg) && s.reps === values.reps)
+  );
+}
+
+/** Weights are stored in kg, so a lb round-trip can leave tiny float noise. */
+function sameWeight(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.01;
+}

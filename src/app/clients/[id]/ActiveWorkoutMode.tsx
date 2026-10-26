@@ -6,14 +6,24 @@ import { createPortal } from "react-dom";
 import type { Exercise, Set as PrismaSet } from "@prisma/client";
 import { formatWeight, toDisplay, toStorage } from "@/lib/units";
 import { formatClock, formatDuration, getElapsedSeconds } from "@/lib/session-duration";
-import { createSet, updateSet, completeSet, uncompleteSet, syncCheckedSets } from "@/app/actions/sets";
-import { isCompletedSet, isPlannedOnly, formatPlanVsActual } from "@/lib/sets";
+import { createSet, completeSet, uncompleteSet, syncCheckedSets, applySetToRemaining } from "@/app/actions/sets";
+import { isCompletedSet, isPlannedOnly, formatPlanVsActual, findSetsToAutofill } from "@/lib/sets";
 import { markSessionFinished, getSessionDurationEstimate, pauseSession } from "@/app/actions/sessions";
 import { notifyRestDone } from "@/lib/workout-cues";
 import { getFinishSkippedCopy } from "@/lib/workout-finish";
 import { useWakeLock } from "@/hooks/useWakeLock";
+import { WarmupChecklist, type SessionWarmupItem } from "./WarmupChecklist";
+import { WarmupDisplay } from "./WarmupSection";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
+type WarmupBlock = {
+  id: string;
+  name: string;
+  items: { id: string; name: string; details: string | null; orderIndex: number }[];
+};
+/** What the athlete typed into a planned set's boxes. Blank = use the target. */
+type SetDraft = { weight: string; reps: string };
+type AutofillOffer = { exerciseId: string; setId: string; weightKg: number; reps: number };
 
 const TIMER_KEY = "workout_timer_v1";
 const IN_PROGRESS_KEY = "workout_in_progress";
@@ -191,55 +201,12 @@ function InlineAddSet({ exerciseId, lastSet, setCount, onAdded }: {
   );
 }
 
-// ─── Inline Edit Set Form ─────────────────────────────────────────────────────
-
-function InlineEditSet({ set, onSaved, onCancel }: {
-  set: PrismaSet;
-  onSaved: (updated: { weightKg: number; reps: number }) => void;
-  onCancel: () => void;
-}) {
-  const [weight, setWeight] = useState(String(toDisplay(set.weightKg, "weight")));
-  const [reps, setReps] = useState(String(set.reps));
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const fd = new FormData();
-    fd.set("weightLb", weight); fd.set("reps", reps);
-    if (set.rpe != null) fd.set("rpe", String(set.rpe));
-    if (set.notes) fd.set("notes", set.notes);
-    startTransition(async () => {
-      const result = await updateSet(set.id, fd);
-      if (result.ok) { onSaved({ weightKg: parseFloat(weight) / 2.20462, reps: parseInt(reps, 10) || 0 }); }
-      else { setError(result.errors.weightLb ?? result.errors.reps ?? result.errors._ ?? "Error"); }
-    });
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2 flex-wrap">
-      <input type="number" step="0.1" min="0" value={weight} onChange={e => setWeight(e.target.value)}
-        placeholder="lb" className="input w-20 px-2 py-1.5 text-sm" disabled={isPending} autoFocus />
-      <input type="number" min="0" value={reps} onChange={e => setReps(e.target.value)}
-        placeholder="reps" className="input w-16 px-2 py-1.5 text-sm" disabled={isPending} />
-      <button type="submit" disabled={isPending}
-        className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50">
-        {isPending ? "…" : "Save"}
-      </button>
-      <button type="button" onClick={onCancel} disabled={isPending}
-        className="rounded border border-border px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-muted/20">
-        Cancel
-      </button>
-      {error && <span className="text-xs text-error">{error}</span>}
-    </form>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ActiveWorkoutMode({
   exercises,
+  warmupItems = [],
+  warmupBlock = null,
   sessionName,
   sessionDate,
   sessionId,
@@ -250,6 +217,10 @@ export function ActiveWorkoutMode({
   onFinish,
 }: {
   exercises: ExerciseWithSets[];
+  /** The session's own warmup checklist, shown above the exercises. */
+  warmupItems?: SessionWarmupItem[];
+  /** A trainer-assigned warmup block, shown read-only. */
+  warmupBlock?: WarmupBlock | null;
   sessionName: string | null;
   sessionDate: Date;
   sessionId: string;
@@ -264,7 +235,11 @@ export function ActiveWorkoutMode({
 }) {
   const router = useRouter();
   const [liveExercises, setLiveExercises] = useState<ExerciseWithSets[]>(exercises);
-  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, SetDraft>>({});
+  const [autofillOffer, setAutofillOffer] = useState<AutofillOffer | null>(null);
+  const [, startAutofillTransition] = useTransition();
+  /** In-flight completeSet calls, so "apply to rest" can wait for the source set to land. */
+  const pendingCompletes = useRef(new Map<string, Promise<unknown>>());
   const [isFinishing, startFinishTransition] = useTransition();
   const [isPausing, startPauseTransition] = useTransition();
   const [, startToggleTransition] = useTransition();
@@ -350,38 +325,125 @@ export function ActiveWorkoutMode({
     return () => { document.body.style.overflow = prev; };
   }, []);
 
+  function setDraft(setId: string, field: keyof SetDraft, value: string) {
+    setDrafts((prev) => ({
+      ...prev,
+      [setId]: { weight: prev[setId]?.weight ?? "", reps: prev[setId]?.reps ?? "", [field]: value },
+    }));
+  }
+
+  /** Typed numbers win; a blank box falls back to the target. */
+  function resolveDraft(s: PrismaSet): { weightKg: number; reps: number; typed: boolean } {
+    const d = drafts[s.id];
+    const w = d?.weight.trim() ? parseFloat(d.weight) : NaN;
+    const r = d?.reps.trim() ? parseInt(d.reps, 10) : NaN;
+    const weightOk = Number.isFinite(w) && w >= 0;
+    const repsOk = Number.isInteger(r) && r >= 0;
+    return {
+      weightKg: weightOk ? toStorage(w, "weight") : s.weightKg,
+      reps: repsOk ? r : s.reps,
+      typed: weightOk || repsOk,
+    };
+  }
+
   function toggleSet(setId: string) {
     if (setId.startsWith("tmp-")) return; // optimistic row, not persisted yet
     const wasChecked = checked.has(setId);
+    const target = liveExercises.flatMap((ex) => ex.sets.map((s) => ({ ex, s }))).find(({ s }) => s.id === setId);
+    if (!target) return;
+    const { ex, s: set } = target;
+
+    const actual = wasChecked ? null : resolveDraft(set);
+    const hasPlan = set.plannedWeightKg != null && set.plannedReps != null;
 
     // Optimistic: the check must feel instant mid-set. The server call follows
     // and router.refresh() reconciles.
-    setLiveExercises((prev) =>
-      prev.map((ex) => ({
-        ...ex,
-        sets: ex.sets.map((s) =>
-          s.id === setId
-            ? {
-                ...s,
-                completedAt: wasChecked ? null : new Date(),
-                ...(wasChecked && s.plannedWeightKg != null && s.plannedReps != null
-                  ? { weightKg: s.plannedWeightKg, reps: s.plannedReps }
-                  : {}),
-              }
-            : s
-        ),
-      }))
-    );
+    const nextExercises = liveExercises.map((e) => ({
+      ...e,
+      sets: e.sets.map((s) => {
+        if (s.id !== setId) return s;
+        if (wasChecked) {
+          return {
+            ...s,
+            completedAt: null,
+            ...(hasPlan ? { weightKg: s.plannedWeightKg!, reps: s.plannedReps! } : {}),
+          };
+        }
+        return {
+          ...s,
+          completedAt: new Date(),
+          plannedWeightKg: s.plannedWeightKg ?? s.weightKg,
+          plannedReps: s.plannedReps ?? s.reps,
+          weightKg: actual!.weightKg,
+          reps: actual!.reps,
+        };
+      }),
+    }));
+    setLiveExercises(nextExercises);
 
     if (wasChecked) {
+      // Put what they actually did back in the boxes so a fix is one edit away.
+      const differs = hasPlan && (set.weightKg !== set.plannedWeightKg || set.reps !== set.plannedReps);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        if (differs) next[setId] = { weight: String(toDisplay(set.weightKg, "weight")), reps: String(set.reps) };
+        else delete next[setId];
+        return next;
+      });
+      if (autofillOffer?.setId === setId) setAutofillOffer(null);
       if (checked.size <= 1) timer.reset();
     } else {
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[setId];
+        return next;
+      });
+      // They did something other than the target: offer to carry it forward.
+      const updatedEx = nextExercises.find((e) => e.id === ex.id)!;
+      const values = { weightKg: actual!.weightKg, reps: actual!.reps };
+      const later = findSetsToAutofill(updatedEx.sets, setId, values);
+      setAutofillOffer(actual!.typed && later.length > 0 ? { exerciseId: ex.id, setId, ...values } : null);
       timer.start();
     }
 
+    let fd: FormData | undefined;
+    if (actual?.typed) {
+      fd = new FormData();
+      fd.set("weightLb", String(toDisplay(actual.weightKg, "weight")));
+      fd.set("reps", String(actual.reps));
+      if (set.rpe != null) fd.set("rpe", String(set.rpe));
+      if (set.notes) fd.set("notes", set.notes);
+    }
+    const call = wasChecked ? uncompleteSet(setId) : completeSet(setId, fd);
+    pendingCompletes.current.set(setId, call);
     startToggleTransition(async () => {
-      if (wasChecked) await uncompleteSet(setId);
-      else await completeSet(setId);
+      await call;
+      if (pendingCompletes.current.get(setId) === call) pendingCompletes.current.delete(setId);
+      router.refresh();
+    });
+  }
+
+  function applyAutofill() {
+    const offer = autofillOffer;
+    if (!offer) return;
+    setAutofillOffer(null);
+    setLiveExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== offer.exerciseId) return ex;
+        const ids = new globalThis.Set(findSetsToAutofill(ex.sets, offer.setId, offer).map((s) => s.id));
+        return {
+          ...ex,
+          sets: ex.sets.map((s) =>
+            ids.has(s.id)
+              ? { ...s, weightKg: offer.weightKg, reps: offer.reps, plannedWeightKg: offer.weightKg, plannedReps: offer.reps }
+              : s
+          ),
+        };
+      })
+    );
+    startAutofillTransition(async () => {
+      await pendingCompletes.current.get(offer.setId);
+      await applySetToRemaining(offer.setId);
       router.refresh();
     });
   }
@@ -407,16 +469,6 @@ export function ActiveWorkoutMode({
       })
     );
     timer.start();
-  }
-
-  function handleSetSaved(exerciseId: string, setId: string, updated: { weightKg: number; reps: number }) {
-    setLiveExercises((prev) =>
-      prev.map((ex) => {
-        if (ex.id !== exerciseId) return ex;
-        return { ...ex, sets: ex.sets.map((s) => s.id === setId ? { ...s, ...updated } : s) };
-      })
-    );
-    setEditingSetId(null);
   }
 
   function handlePause() {
@@ -603,6 +655,8 @@ export function ActiveWorkoutMode({
 
       {/* ── Exercise List ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        {warmupBlock && <WarmupDisplay block={warmupBlock} />}
+        <WarmupChecklist sessionId={sessionId} items={warmupItems} variant="workout" />
         {liveExercises.map((ex) => {
           const setsAsc = [...ex.sets].sort((a, b) => a.orderIndex - b.orderIndex);
           const doneCount = setsAsc.filter((s) => checked.has(s.id)).length;
@@ -623,74 +677,87 @@ export function ActiveWorkoutMode({
               <div className="space-y-2">
                 {setsAsc.map((s, i) => {
                   const done = checked.has(s.id);
-                  const isTemp = s.id.startsWith("tmp-");
-                  const isEditing = editingSetId === s.id;
-
-                  if (isEditing && !isTemp) {
-                    return (
-                      <div key={s.id} className="rounded-md border border-primary/50 bg-primary/5 px-3 py-2.5">
-                        <InlineEditSet
-                          set={s}
-                          onSaved={(updated) => handleSetSaved(ex.id, s.id, updated)}
-                          onCancel={() => setEditingSetId(null)}
-                        />
-                      </div>
-                    );
-                  }
-
                   const planned = isPlannedOnly(s);
                   const planNote = formatPlanVsActual(s);
+                  const draft = drafts[s.id];
+                  const offer = autofillOffer?.setId === s.id ? autofillOffer : null;
+                  const offerCount = offer
+                    ? findSetsToAutofill(setsAsc, s.id, offer).length
+                    : 0;
 
                   return (
-                    <div key={s.id} className={`flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm transition-colors ${
+                    <div key={s.id}>
+                    <div className={`flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm transition-colors ${
                       done
                         ? "border-green-500/50 bg-green-500/10"
-                        : planned
-                        ? "border-dashed border-muted/60 bg-background"
-                        : "border-border bg-background"
+                        : "border-dashed border-muted/60 bg-background"
                     }`}>
                       {/* Check circle */}
                       <button type="button" onClick={() => toggleSet(s.id)}
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-colors ${
+                        aria-label={done ? `Uncheck set ${i + 1}` : `Mark set ${i + 1} done`}
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors ${
                           done
                             ? "border-green-500 bg-green-500 text-white"
-                            : planned
-                            ? "border-dashed border-muted text-muted hover:border-primary/70"
-                            : "border-border hover:border-primary/70"
+                            : "border-dashed border-muted text-muted hover:border-primary/70"
                         }`}>
                         {done ? "✓" : i + 1}
                       </button>
 
-                      {/* Set details */}
-                      <span
-                        role="button"
-                        onClick={() => toggleSet(s.id)}
-                        className={`flex-1 cursor-pointer font-medium ${
-                          done
-                            ? "text-green-700 dark:text-green-400 line-through opacity-70"
-                            : planned
-                            ? "text-muted"
-                            : "text-[var(--text)]"
-                        }`}
-                      >
-                        {formatWeight(s.weightKg)} × {s.reps} reps
-                        {planned && <span className="ml-2 text-xs font-normal italic">target</span>}
-                        {s.rpe != null && <span className="ml-2 text-xs font-normal opacity-70">RPE {s.rpe}</span>}
-                        {planNote && (
-                          <span className="block text-xs font-normal text-amber-600 dark:text-amber-400 no-underline">
-                            {planNote}
-                          </span>
-                        )}
-                      </span>
-
-                      {/* Edit button (real sets only, not yet checked off) */}
-                      {!isTemp && !done && (
-                        <button type="button" onClick={() => setEditingSetId(s.id)}
-                          className="shrink-0 text-muted hover:text-[var(--text)] transition-colors p-0.5 rounded text-base leading-none"
-                          aria-label="Edit set">
-                          ✎
-                        </button>
+                      {planned ? (
+                        // Not done yet: empty boxes to fill in, target shown faintly.
+                        // Checking off with the boxes blank logs the target.
+                        <div className="flex flex-1 items-center gap-1.5 min-w-0">
+                          <input
+                            type="number" inputMode="decimal" step="0.1" min="0"
+                            value={draft?.weight ?? ""}
+                            onChange={(e) => setDraft(s.id, "weight", e.target.value)}
+                            placeholder={`${toDisplay(s.weightKg, "weight")} lb`}
+                            aria-label={`Set ${i + 1} weight (lb), target ${toDisplay(s.weightKg, "weight")}`}
+                            className="input w-24 px-2 py-1.5 text-sm placeholder:italic placeholder:opacity-50"
+                          />
+                          <span className="text-muted">×</span>
+                          <input
+                            type="number" inputMode="numeric" step="1" min="0"
+                            value={draft?.reps ?? ""}
+                            onChange={(e) => setDraft(s.id, "reps", e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); toggleSet(s.id); } }}
+                            placeholder={`${s.reps} reps`}
+                            aria-label={`Set ${i + 1} reps, target ${s.reps}`}
+                            className="input w-24 px-2 py-1.5 text-sm placeholder:italic placeholder:opacity-50"
+                          />
+                        </div>
+                      ) : (
+                        <span
+                          role="button"
+                          onClick={() => toggleSet(s.id)}
+                          className="flex-1 cursor-pointer font-medium text-green-700 dark:text-green-400"
+                        >
+                          <span className="line-through opacity-70">{formatWeight(s.weightKg)} × {s.reps} reps</span>
+                          {s.rpe != null && <span className="ml-2 text-xs font-normal opacity-70">RPE {s.rpe}</span>}
+                          {planNote && (
+                            <span className="block text-xs font-normal text-amber-600 dark:text-amber-400">
+                              {planNote}
+                            </span>
+                          )}
+                        </span>
                       )}
+                    </div>
+                    {offer && offerCount > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
+                        <span className="flex-1 text-[var(--text)]">
+                          Use {formatWeight(offer.weightKg)} × {offer.reps} for the
+                          {offerCount === 1 ? " next set" : ` remaining ${offerCount} sets`}?
+                        </span>
+                        <button type="button" onClick={applyAutofill}
+                          className="rounded bg-primary px-3 py-1.5 font-medium text-white hover:bg-primary-hover">
+                          Apply
+                        </button>
+                        <button type="button" onClick={() => setAutofillOffer(null)}
+                          className="rounded px-2 py-1.5 text-muted hover:text-[var(--text)]" aria-label="Dismiss">
+                          ✕
+                        </button>
+                      </div>
+                    )}
                     </div>
                   );
                 })}

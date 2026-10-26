@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { normalizeSessionName } from "./data";
+import { cleanWarmupItems, normalizeSessionName } from "./data";
 import { kgToLb } from "./metrics";
 import {
   assertSessionEditable,
@@ -13,7 +13,63 @@ import { clientScope, type Actor } from "./trainer";
 const LB_PER_KG = 2.2046226218;
 
 /** Tools whose changes `undo_ai_change` knows how to reverse. */
-const UNDOABLE_TOOLS = new Set(["update_session", "update_set", "add_exercise_to_session"]);
+const UNDOABLE_TOOLS = new Set([
+  "update_session",
+  "update_set",
+  "add_exercise_to_session",
+  "set_session_warmup",
+]);
+
+type WarmupSnapshot = { items: { text: string; done: boolean }[] };
+
+function warmupSnapshot(items: { text: string; doneAt: Date | null }[]): WarmupSnapshot {
+  return { items: items.map((i) => ({ text: i.text, done: i.doneAt != null })) };
+}
+
+/**
+ * Replace a workout's warmup checklist. Items keep their checked-off state when
+ * the same text is still in the new list, so re-sending a list mid-warmup
+ * doesn't undo progress.
+ */
+export async function setSessionWarmup(actor: Actor, args: { sessionId: string; items: string[] }) {
+  const lines = cleanWarmupItems(args.items);
+  await enforceWriteLimit(actor);
+  const session = await findEditableSession(actor, args.sessionId);
+
+  const { changeId, after } = await prisma.$transaction(async (tx) => {
+    const current = await tx.sessionWarmupItem.findMany({
+      where: { sessionId: session.id },
+      orderBy: { orderIndex: "asc" },
+      select: { text: true, doneAt: true },
+    });
+    const doneByText = new Map(current.filter((c) => c.doneAt).map((c) => [c.text, c.doneAt]));
+    const next = lines.map((text, i) => ({
+      sessionId: session.id,
+      text,
+      orderIndex: i,
+      doneAt: doneByText.get(text) ?? null,
+    }));
+    await tx.sessionWarmupItem.deleteMany({ where: { sessionId: session.id } });
+    if (next.length > 0) await tx.sessionWarmupItem.createMany({ data: next });
+    const after = warmupSnapshot(next);
+    const change = await recordChange(tx, actor, {
+      tool: "set_session_warmup",
+      entityType: "session",
+      entityId: session.id,
+      sessionId: session.id,
+      before: warmupSnapshot(current),
+      after,
+    });
+    return { changeId: change.id, after };
+  });
+
+  return {
+    changeId,
+    sessionId: session.id,
+    warmup: after.items.map((i) => i.text),
+    note: "Use undo_ai_change with this changeId to revert.",
+  };
+}
 
 type SessionSnapshot = {
   name: string | null;
@@ -276,6 +332,37 @@ export async function undoChange(actor: Actor, changeId: string) {
       prisma.mcpChange.update({ where: { id: change.id }, data: { undoneAt: new Date() } }),
     ]);
     return { undone: change.id, restored: "workout name, date and notes" };
+  }
+
+  if (change.tool === "set_session_warmup") {
+    const session = await findEditableSession(actor, change.entityId);
+    const current = await prisma.sessionWarmupItem.findMany({
+      where: { sessionId: session.id },
+      orderBy: { orderIndex: "asc" },
+      select: { text: true, doneAt: true },
+    });
+    // Compare text only: checking items off during the warmup isn't a conflicting edit.
+    const texts = (snap: WarmupSnapshot) => snap.items.map((i) => i.text);
+    if (!sameSnapshot(texts(warmupSnapshot(current)), texts(change.after as WarmupSnapshot))) {
+      throw new Error(
+        "This warmup was changed again after the AI edit, so undo would overwrite newer changes. Nothing was changed."
+      );
+    }
+    const before = change.before as WarmupSnapshot;
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.sessionWarmupItem.deleteMany({ where: { sessionId: session.id } }),
+      prisma.sessionWarmupItem.createMany({
+        data: before.items.map((item, i) => ({
+          sessionId: session.id,
+          text: item.text,
+          orderIndex: i,
+          doneAt: item.done ? now : null,
+        })),
+      }),
+      prisma.mcpChange.update({ where: { id: change.id }, data: { undoneAt: new Date() } }),
+    ]);
+    return { undone: change.id, restored: "warmup checklist" };
   }
 
   if (change.tool === "update_set") {

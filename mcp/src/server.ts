@@ -161,6 +161,13 @@ export function createServer(getActor: ActorResolver): McpServer {
         sessionName: z.string().min(1).max(100),
         date: dateSchema.optional().describe("YYYY-MM-DD"),
         notes: z.string().max(2000).optional(),
+        warmup: z
+          .array(z.string().min(1).max(200))
+          .max(30)
+          .optional()
+          .describe(
+            "Warmup checklist, one item per entry (e.g. \"Incline treadmill walk 3 min\", \"RDL warm-up 95 lb × 8\"). Shown above the exercises and checked off in the app; never counted as sets. Put warmups here, not in notes."
+          ),
         exercises: z.array(plannedExerciseSchema).min(1).max(30),
       }),
     },
@@ -180,6 +187,19 @@ export function createServer(getActor: ActorResolver): McpServer {
       }),
     },
     async (args) => withTrainer((actor) => edits.updateSession(actor, args))
+  );
+
+  server.registerTool(
+    "set_session_warmup",
+    {
+      description:
+        "Replace a workout's warmup checklist (one item per entry; empty list clears it). Warmup items are shown above the exercises, checked off during the workout, and never counted as sets, volume or PRs. Items whose text is unchanged keep their checked-off state. Only works on workouts that are not finished. Returns a changeId you can pass to undo_ai_change.",
+      inputSchema: z.object({
+        sessionId: z.string(),
+        items: z.array(z.string().min(1).max(200)).max(30),
+      }),
+    },
+    async (args) => withTrainer((actor) => edits.setSessionWarmup(actor, args))
   );
 
   server.registerTool(

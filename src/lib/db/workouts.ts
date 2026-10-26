@@ -30,6 +30,7 @@ export async function getClientSessionsPaginated(params: {
       warmupBlock: {
         include: { items: { orderBy: { orderIndex: "asc" } } },
       },
+      warmupItems: { orderBy: { orderIndex: "asc" } },
     },
   });
 
@@ -95,6 +96,7 @@ export async function getClientSessionsInMonth(params: {
         orderBy: { orderIndex: "asc" },
         include: { sets: { orderBy: { orderIndex: "asc" } } },
       },
+      warmupItems: { orderBy: { orderIndex: "asc" } },
     },
   });
 }

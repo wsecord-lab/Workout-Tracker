@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { assertClientAccess } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
 import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
+import { findSetsToAutofill } from "@/lib/sets";
 import { validateSet, validateSetDetails, validateSetUpdate, validateSetsBulk } from "@/lib/validations";
 
 export type SetActionResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -84,6 +85,49 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
   await invalidateClientMetricsCache(set.exercise.session.clientId);
   revalidateClientWorkoutViews(set.exercise.session.clientId);
   return { ok: true };
+}
+
+/**
+ * "Apply to the rest": copy this set's weight × reps onto every later set in the
+ * same exercise that hasn't been done yet. Those sets are still plans, so the
+ * plan snapshot moves with them. Completed sets are never changed.
+ */
+export async function applySetToRemaining(
+  setId: string
+): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
+  const set = await prisma.set.findUnique({
+    where: { id: setId },
+    include: {
+      exercise: {
+        include: {
+          session: true,
+          sets: { select: { id: true, orderIndex: true, weightKg: true, reps: true, completedAt: true } },
+        },
+      },
+    },
+  });
+  if (!set) return { ok: false, error: "Set not found" };
+  await assertClientAccess(set.exercise.session.clientId);
+  if (set.exercise.session.finishedAt) return { ok: false, error: "This workout is finished." };
+
+  const targets = findSetsToAutofill(set.exercise.sets, set.id, {
+    weightKg: set.weightKg,
+    reps: set.reps,
+  });
+  if (targets.length === 0) return { ok: true, updated: 0 };
+
+  const { count } = await prisma.set.updateMany({
+    // completedAt re-checked here so a set checked off in the meantime is left alone.
+    where: { id: { in: targets.map((t) => t.id) }, exerciseId: set.exerciseId, completedAt: null },
+    data: {
+      weightKg: set.weightKg,
+      reps: set.reps,
+      plannedWeightKg: set.weightKg,
+      plannedReps: set.reps,
+    },
+  });
+  revalidateClientWorkoutViews(set.exercise.session.clientId);
+  return { ok: true, updated: count };
 }
 
 /** Update only RPE and notes (backwards compatibility for existing UI). */

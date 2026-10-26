@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { parseWarmupLines, WARMUP_ITEMS_MAX } from "../../src/lib/session-warmup";
 import { enforceWriteLimit, recordChange } from "./safeguards";
 import { aggregateProgress, kgToLb, rangeStart, type MetricsRangeKey } from "./metrics";
 import {
@@ -8,6 +9,15 @@ import {
   trainerIdFor,
   type Actor as TrainerContext,
 } from "./trainer";
+
+/** Clean AI-supplied warmup lines the same way the app cleans typed ones. */
+export function cleanWarmupItems(items: string[]): string[] {
+  const lines = items.flatMap((i) => parseWarmupLines(i));
+  if (lines.length > WARMUP_ITEMS_MAX) {
+    throw new Error(`A warmup can have up to ${WARMUP_ITEMS_MAX} items.`);
+  }
+  return lines;
+}
 
 export function normalizeExerciseName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
@@ -130,6 +140,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
       finishedAt: true,
       pausedAt: true,
       client: { select: { id: true, name: true } },
+      warmupItems: { orderBy: { orderIndex: "asc" }, select: { text: true, doneAt: true } },
       exercises: {
         where: { deletedAt: null },
         orderBy: { orderIndex: "asc" },
@@ -161,6 +172,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
     name: session.name,
     date: session.date.toISOString().slice(0, 10),
     notes: session.notes,
+    warmup: session.warmupItems.map((w) => ({ text: w.text, done: w.doneAt != null })),
     client: session.client,
     inProgress: Boolean(session.startedAt && !session.finishedAt),
     paused: Boolean(session.pausedAt && !session.finishedAt),
@@ -382,6 +394,7 @@ export async function createPlannedSession(
     sessionName: string;
     date?: string;
     notes?: string;
+    warmup?: string[];
     exercises: PlannedExerciseInput[];
   }
 ) {
@@ -391,6 +404,7 @@ export async function createPlannedSession(
   const name = args.sessionName.trim();
   if (!name) throw new Error("sessionName is required.");
   const date = args.date ? new Date(`${args.date}T12:00:00.000Z`) : new Date();
+  const warmup = cleanWarmupItems(args.warmup ?? []);
   await enforceWriteLimit(trainer);
 
   const session = await prisma.$transaction(async (tx) => {
@@ -411,6 +425,12 @@ export async function createPlannedSession(
       sessionId: created.id,
       after: { name, date: date.toISOString() },
     });
+
+    if (warmup.length > 0) {
+      await tx.sessionWarmupItem.createMany({
+        data: warmup.map((text, i) => ({ sessionId: created.id, text, orderIndex: i })),
+      });
+    }
 
     for (let i = 0; i < args.exercises.length; i++) {
       const ex = args.exercises[i];

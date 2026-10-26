@@ -5,6 +5,7 @@ import {
   planDiffers,
   summarizeExerciseSets,
   formatPlanVsActual,
+  findSetsToAutofill,
   type SetLike,
 } from "./sets";
 
@@ -105,5 +106,39 @@ describe("formatPlanVsActual", () => {
   it("is null when there is no gap to describe", () => {
     expect(formatPlanVsActual(set({ plannedWeightKg: 100, plannedReps: 5 }))).toBeNull();
     expect(formatPlanVsActual(set())).toBeNull();
+  });
+});
+
+describe("findSetsToAutofill", () => {
+  const row = (id: string, orderIndex: number, weightKg: number, reps: number, completed = false) => ({
+    id, orderIndex, weightKg, reps, completedAt: completed ? done : null,
+  });
+
+  it("returns later unfinished sets that differ from the new values", () => {
+    const sets = [row("a", 0, 75, 8), row("b", 1, 75, 8), row("c", 2, 75, 8)];
+    const out = findSetsToAutofill(sets, "a", { weightKg: 80, reps: 8 });
+    expect(out.map((s) => s.id)).toEqual(["b", "c"]);
+  });
+
+  it("never touches completed sets or earlier sets", () => {
+    const sets = [row("a", 0, 75, 8), row("b", 1, 75, 8), row("c", 2, 75, 8, true), row("d", 3, 75, 8)];
+    const out = findSetsToAutofill(sets, "b", { weightKg: 80, reps: 6 });
+    expect(out.map((s) => s.id)).toEqual(["d"]);
+  });
+
+  it("skips sets that already match (with lb↔kg float noise)", () => {
+    const sets = [row("a", 0, 80, 8), row("b", 1, 80.0000001, 8), row("c", 2, 75, 8)];
+    const out = findSetsToAutofill(sets, "a", { weightKg: 80, reps: 8 });
+    expect(out.map((s) => s.id)).toEqual(["c"]);
+  });
+
+  it("uses orderIndex, not array position", () => {
+    const sets = [row("late", 5, 75, 8), row("src", 1, 75, 8), row("early", 0, 75, 8)];
+    const out = findSetsToAutofill(sets, "src", { weightKg: 90, reps: 5 });
+    expect(out.map((s) => s.id)).toEqual(["late"]);
+  });
+
+  it("returns nothing for an unknown source set", () => {
+    expect(findSetsToAutofill([row("a", 0, 75, 8)], "zzz", { weightKg: 1, reps: 1 })).toEqual([]);
   });
 });
