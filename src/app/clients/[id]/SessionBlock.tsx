@@ -17,6 +17,7 @@ import { SessionDurationEditor } from "./SessionDurationEditor";
 import { RepeatLastWorkoutPicker } from "./RepeatLastWorkoutPicker";
 import { ActiveWorkoutMode } from "./ActiveWorkoutMode";
 import { WarmupDisplay, WarmupAssigner } from "./WarmupSection";
+import { WarmupChecklist, type SessionWarmupItem } from "./WarmupChecklist";
 import { WhoopExportButton } from "./WhoopExportButton";
 import { useRouter } from "next/navigation";
 
@@ -26,6 +27,7 @@ type WarmupBlock = { id: string; name: string; items: WarmupItem[] };
 type SessionWithExercises = WorkoutSession & {
   exercises: ExerciseWithSets[];
   warmupBlock?: WarmupBlock | null;
+  warmupItems?: SessionWarmupItem[];
 };
 type CatalogItem = { id: string; name: string };
 
@@ -600,6 +602,7 @@ export function SessionBlock({
           {session.warmupBlock && (
             <WarmupDisplay block={session.warmupBlock} />
           )}
+          <WarmupChecklist sessionId={session.id} items={session.warmupItems ?? []} />
           {!isClient && (
             <WarmupAssigner
               sessionId={session.id}
@@ -673,6 +676,8 @@ export function SessionBlock({
       {workoutActive && (
         <ActiveWorkoutMode
           exercises={session.exercises}
+          warmupItems={session.warmupItems ?? []}
+          warmupBlock={session.warmupBlock ?? null}
           sessionName={session.name ?? null}
           sessionDate={session.date}
           sessionId={session.id}

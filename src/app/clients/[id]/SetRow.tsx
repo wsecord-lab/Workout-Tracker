@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Set } from "@prisma/client";
-import { deleteSet, updateSet, completeSet, uncompleteSet } from "@/app/actions/sets";
-import { formatWeight, toDisplay } from "@/lib/units";
-import { formatPlanVsActual, isPlannedOnly } from "@/lib/sets";
+import { deleteSet, updateSet, completeSet, uncompleteSet, applySetToRemaining } from "@/app/actions/sets";
+import { formatWeight, toDisplay, toStorage } from "@/lib/units";
+import { findSetsToAutofill, formatPlanVsActual, isPlannedOnly } from "@/lib/sets";
 import { DragHandle, type DragHandleProps } from "./DragHandle";
 
 function PencilIcon() {
@@ -36,9 +36,12 @@ export function SetRow({
   set,
   setNumber,
   dragHandle,
+  exerciseSets,
 }: {
   set: Set;
   setNumber?: number;
+  /** Every set in this exercise, so a save can offer "apply to the rest". */
+  exerciseSets?: Set[];
   /** Omitted in read-only contexts (e.g. the drag overlay preview). */
   dragHandle?: DragHandleProps;
 }) {
@@ -49,7 +52,19 @@ export function SetRow({
   const [notes, setNotes] = useState(set.notes ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [autofill, setAutofill] = useState<{ weightKg: number; reps: number } | null>(null);
   const router = useRouter();
+
+  const autofillCount =
+    autofill && exerciseSets ? findSetsToAutofill(exerciseSets, set.id, autofill).length : 0;
+
+  function handleApplyToRest() {
+    setAutofill(null);
+    startTransition(async () => {
+      await applySetToRemaining(set.id);
+      router.refresh();
+    });
+  }
 
   function handleSave() {
     setErrors({});
@@ -62,6 +77,11 @@ export function SetRow({
       const result = await updateSet(set.id, formData);
       if (result.ok) {
         setEditing(false);
+        const w = parseFloat(weightLb);
+        const r = parseInt(reps, 10);
+        if (Number.isFinite(w) && Number.isInteger(r)) {
+          setAutofill({ weightKg: toStorage(w, "weight"), reps: r });
+        }
         return;
       }
       setErrors(result.errors);
@@ -142,6 +162,30 @@ export function SetRow({
             title="Remove set"
           >
             {isPending ? "…" : <TrashIcon />}
+          </button>
+        </div>
+      )}
+      {!editing && autofill && autofillCount > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-xs">
+          <span className="flex-1 text-[var(--text)]">
+            Use {formatWeight(autofill.weightKg)} × {autofill.reps} for the
+            {autofillCount === 1 ? " next set" : ` remaining ${autofillCount} sets`}?
+          </span>
+          <button
+            type="button"
+            onClick={handleApplyToRest}
+            disabled={isPending}
+            className="rounded bg-primary px-2.5 py-1 font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+          >
+            Apply to rest
+          </button>
+          <button
+            type="button"
+            onClick={() => setAutofill(null)}
+            className="rounded px-1.5 py-1 text-muted hover:text-[var(--text)]"
+            aria-label="Dismiss"
+          >
+            ✕
           </button>
         </div>
       )}

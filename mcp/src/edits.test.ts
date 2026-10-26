@@ -6,6 +6,7 @@ const m = vi.hoisted(() => {
     set: { update: vi.fn(), create: vi.fn() },
     exercise: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     mcpChange: { create: vi.fn() },
+    sessionWarmupItem: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
   };
   return {
     tx,
@@ -14,6 +15,7 @@ const m = vi.hoisted(() => {
       set: { findFirst: vi.fn(), update: vi.fn() },
       exercise: { findFirst: vi.fn(), update: vi.fn() },
       mcpChange: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+      sessionWarmupItem: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
       $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === "function" ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as unknown[])
       ),
@@ -23,7 +25,7 @@ const m = vi.hoisted(() => {
 vi.mock("./db", () => ({ prisma: m.prisma }));
 
 import { MAX_WRITES_PER_HOUR } from "./safeguards";
-import { addExerciseToSession, undoChange, updateSession, updateSet } from "./edits";
+import { addExerciseToSession, setSessionWarmup, undoChange, updateSession, updateSet } from "./edits";
 import type { Actor } from "./trainer";
 
 const client: Actor = { id: "u-client", email: "c@x.y", name: null, role: "CLIENT", apiKeyId: "k1" };
@@ -139,6 +141,68 @@ describe("AI edit safeguards", () => {
     m.prisma.mcpChange.findFirst.mockResolvedValueOnce(null);
     await expect(undoChange(client, "nope")).rejects.toThrow(/not found/);
     expect(m.prisma.mcpChange.findFirst.mock.calls[2][0].where.userId).toBe("u-client");
+  });
+});
+
+describe("set_session_warmup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    m.prisma.mcpChange.count.mockResolvedValue(0);
+    m.tx.mcpChange.create.mockResolvedValue({ id: "chg-w" });
+    m.prisma.workoutSession.findFirst.mockResolvedValue(openSession);
+  });
+
+  it("replaces the list, keeps checked-off state for unchanged items, and logs before/after", async () => {
+    const doneAt = new Date("2026-10-01T12:05:00.000Z");
+    m.tx.sessionWarmupItem.findMany.mockResolvedValue([
+      { text: "Incline walk 3 min", doneAt },
+      { text: "Old item", doneAt: null },
+    ]);
+    const res = await setSessionWarmup(client, {
+      sessionId: "s1",
+      items: ["Incline walk 3 min", "- Hip CARs 3/side"],
+    });
+    expect(res.warmup).toEqual(["Incline walk 3 min", "Hip CARs 3/side"]);
+    expect(m.tx.sessionWarmupItem.deleteMany).toHaveBeenCalledWith({ where: { sessionId: "s1" } });
+    expect(m.tx.sessionWarmupItem.createMany.mock.calls[0][0].data).toEqual([
+      { sessionId: "s1", text: "Incline walk 3 min", orderIndex: 0, doneAt },
+      { sessionId: "s1", text: "Hip CARs 3/side", orderIndex: 1, doneAt: null },
+    ]);
+    const logged = m.tx.mcpChange.create.mock.calls[0][0].data;
+    expect(logged.tool).toBe("set_session_warmup");
+    expect(logged.before.items.map((i: { text: string }) => i.text)).toEqual(["Incline walk 3 min", "Old item"]);
+  });
+
+  it("is locked on finished workouts", async () => {
+    m.prisma.workoutSession.findFirst.mockResolvedValue({ ...openSession, finishedAt: new Date() });
+    await expect(setSessionWarmup(client, { sessionId: "s1", items: ["x"] })).rejects.toThrow(/finished/);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("undo restores the previous list, but refuses if the text changed since", async () => {
+    const change = {
+      id: "chg-w",
+      tool: "set_session_warmup",
+      entityId: "s1",
+      undoneAt: null,
+      before: { items: [{ text: "Bike 5 min", done: false }] },
+      after: { items: [{ text: "Walk 3 min", done: false }] },
+    };
+    m.prisma.mcpChange.findFirst.mockResolvedValue(change);
+    // Checked off since the AI edit: still undoable.
+    m.prisma.sessionWarmupItem.findMany.mockResolvedValue([{ text: "Walk 3 min", doneAt: new Date() }]);
+    const res = await undoChange(client, "chg-w");
+    expect(res.restored).toBe("warmup checklist");
+    expect(m.prisma.sessionWarmupItem.createMany.mock.calls[0][0].data).toEqual([
+      { sessionId: "s1", text: "Bike 5 min", orderIndex: 0, doneAt: null },
+    ]);
+
+    vi.clearAllMocks();
+    m.prisma.mcpChange.findFirst.mockResolvedValue(change);
+    m.prisma.workoutSession.findFirst.mockResolvedValue(openSession);
+    m.prisma.sessionWarmupItem.findMany.mockResolvedValue([{ text: "Edited by hand", doneAt: null }]);
+    await expect(undoChange(client, "chg-w")).rejects.toThrow(/changed again/);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

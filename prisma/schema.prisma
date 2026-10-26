@@ -186,6 +186,8 @@ model WorkoutSession {
   exercises     Exercise[]
   warmupBlockId String?
   warmupBlock   WarmupBlock? @relation(fields: [warmupBlockId], references: [id], onDelete: SetNull)
+  /// Free-form warmup checklist for this one workout. Not sets: never counted in volume, PRs or charts.
+  warmupItems   SessionWarmupItem[]
   /// Stamped when workout mode is first entered.
   startedAt     DateTime?
   finishedAt    DateTime?
@@ -223,6 +225,20 @@ model WarmupBlockItem {
   orderIndex Int         @default(0)
 
   @@index([blockId])
+}
+
+/// One line of a session's own warmup checklist (e.g. "Incline walk 3 min").
+model SessionWarmupItem {
+  id         String         @id @default(cuid())
+  sessionId  String
+  session    WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text       String
+  /// Null = not done yet.
+  doneAt     DateTime?
+  orderIndex Int            @default(0)
+  createdAt  DateTime       @default(now())
+
+  @@index([sessionId, orderIndex])
 }
 
 model ExerciseCatalog {

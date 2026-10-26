@@ -371,3 +371,57 @@ describe("updateSet", () => {
     expect(data.plannedReps).toBeUndefined();
   });
 });
+
+describe("applySetToRemaining", () => {
+  function sourceSet(sessionFinished = false) {
+    return {
+      id: "s1",
+      exerciseId: "ex-1",
+      weightKg: 80,
+      reps: 8,
+      completedAt: new Date(),
+      exercise: {
+        session: { clientId: "client-1", finishedAt: sessionFinished ? new Date() : null },
+        sets: [
+          { id: "s1", orderIndex: 0, weightKg: 80, reps: 8, completedAt: new Date() },
+          { id: "s2", orderIndex: 1, weightKg: 75, reps: 8, completedAt: null },
+          { id: "s3", orderIndex: 2, weightKg: 75, reps: 8, completedAt: new Date() },
+          { id: "s4", orderIndex: 3, weightKg: 75, reps: 10, completedAt: null },
+        ],
+      },
+    };
+  }
+
+  it("copies weight × reps (and the plan) onto later unfinished sets only", async () => {
+    const { applySetToRemaining } = await import("./sets");
+    setFindUnique.mockResolvedValue(sourceSet());
+    setUpdateMany.mockResolvedValue({ count: 2 });
+
+    const result = await applySetToRemaining("s1");
+
+    expect(result).toEqual({ ok: true, updated: 2 });
+    expect(setUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["s2", "s4"] }, exerciseId: "ex-1", completedAt: null },
+      data: { weightKg: 80, reps: 8, plannedWeightKg: 80, plannedReps: 8 },
+    });
+  });
+
+  it("does nothing when the later sets already match", async () => {
+    const { applySetToRemaining } = await import("./sets");
+    const s = sourceSet();
+    s.exercise.sets = s.exercise.sets.map((x) => ({ ...x, weightKg: 80, reps: 8 }));
+    setFindUnique.mockResolvedValue(s);
+
+    expect(await applySetToRemaining("s1")).toEqual({ ok: true, updated: 0 });
+    expect(setUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses on a finished workout", async () => {
+    const { applySetToRemaining } = await import("./sets");
+    setFindUnique.mockResolvedValue(sourceSet(true));
+
+    const result = await applySetToRemaining("s1");
+    expect(result.ok).toBe(false);
+    expect(setUpdateMany).not.toHaveBeenCalled();
+  });
+});

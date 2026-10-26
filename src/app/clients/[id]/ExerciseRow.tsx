@@ -449,7 +449,7 @@ export function ExerciseRow({
               onDragStateChange={setIsDraggingSet}
               onReorder={(ids) => reorderSets(exercise.id, ids)}
               renderItem={(s, i, { handle }) => (
-                <SetRow set={s} setNumber={i + 1} dragHandle={handle} />
+                <SetRow set={s} setNumber={i + 1} dragHandle={handle} exerciseSets={setsAsc} />
               )}
               renderOverlay={(s, i) => (
                 <ul className="w-[min(28rem,90vw)] opacity-95 shadow-lg">
