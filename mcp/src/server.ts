@@ -10,11 +10,19 @@ const dateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
   .refine((d) => !Number.isNaN(new Date(`${d}T12:00:00.000Z`).getTime()), "Not a real date");
 
+const tempoSchema = z
+  .string()
+  .max(20)
+  .describe(
+    'Lifting tempo as "eccentric-isometric-concentric" seconds, e.g. "3-1-1" or "4-0-X". Each part 0–10 or X (explosive). Applied to every planned set.'
+  );
+
 const plannedExerciseSchema = z.object({
   name: z.string().min(1).max(100).describe("Exercise name"),
   sets: z.number().int().positive().max(20).optional().describe("Number of planned sets"),
   weightLb: z.number().positive().max(2000).optional().describe("Planned weight in pounds"),
   reps: z.number().int().positive().max(200).optional().describe("Planned reps per set"),
+  tempo: tempoSchema.optional(),
 });
 
 export type ActorResolver = () => Promise<Actor>;
@@ -206,11 +214,16 @@ export function createServer(getActor: ActorResolver): McpServer {
     "update_set",
     {
       description:
-        "Change the planned weight (pounds) and/or reps of one planned set. Only works on sets that have not been performed, in workouts that are not finished. Get set ids from get_session. Returns a changeId you can pass to undo_ai_change.",
+        "Change the planned weight (pounds), reps and/or tempo of one planned set. Only works on sets that have not been performed, in workouts that are not finished. Get set ids from get_session. Returns a changeId you can pass to undo_ai_change.",
       inputSchema: z.object({
         setId: z.string(),
         weightLb: z.number().positive().max(2000).optional(),
         reps: z.number().int().positive().max(200).optional(),
+        tempo: z
+          .string()
+          .max(20)
+          .optional()
+          .describe('New tempo, e.g. "3-1-1" (eccentric-isometric-concentric, 0–10 or X). Empty string removes it.'),
       }),
     },
     async (args) => withTrainer((actor) => edits.updateSet(actor, args))
@@ -227,6 +240,7 @@ export function createServer(getActor: ActorResolver): McpServer {
         sets: z.number().int().positive().max(20).optional(),
         weightLb: z.number().positive().max(2000).optional(),
         reps: z.number().int().positive().max(200).optional(),
+        tempo: tempoSchema.optional(),
       }),
     },
     async (args) => withTrainer((actor) => edits.addExerciseToSession(actor, args))

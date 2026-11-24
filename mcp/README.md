@@ -16,7 +16,7 @@ Talk to your locker-room data from **Cursor** or **Claude Desktop** using your e
 
 | `update_session` | Rename a workout, change its date or notes |
 | `set_session_warmup` | Replace a workout's warmup checklist (not counted as sets) |
-| `update_set` | Change a planned set's weight / reps |
+| `update_set` | Change a planned set's weight / reps / tempo |
 | `add_exercise_to_session` | Add an exercise (and planned sets) to a workout |
 | `list_ai_changes` | See every AI edit with before/after values |
 | `undo_ai_change` | Revert one AI edit |

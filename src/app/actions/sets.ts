@@ -5,6 +5,7 @@ import { assertClientAccess } from "@/lib/authz";
 import { invalidateClientMetricsCache } from "@/lib/metrics";
 import { revalidateClientWorkoutViews } from "@/lib/revalidate-client";
 import { findSetsToAutofill } from "@/lib/sets";
+import { parseTempo } from "@/lib/tempo";
 import { validateSet, validateSetDetails, validateSetUpdate, validateSetsBulk } from "@/lib/validations";
 
 export type SetActionResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -60,6 +61,13 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
     notes: formData.get("notes"),
   });
   if (!result.ok) return { ok: false, errors: result.errors };
+  // Tempo is only touched when the form sends it, so older callers leave it alone.
+  let tempo: string | null | undefined;
+  if (formData.has("tempo")) {
+    const parsed = parseTempo(formData.get("tempo"));
+    if (!parsed.ok) return { ok: false, errors: { tempo: parsed.error } };
+    tempo = parsed.tempo;
+  }
   const set = await prisma.set.findUnique({
     where: { id: setId },
     include: { exercise: { include: { session: true } } },
@@ -77,6 +85,7 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
       reps: result.data.reps,
       rpe: result.data.rpe,
       notes: result.data.notes,
+      ...(tempo !== undefined ? { tempo } : {}),
       ...(editingPlan
         ? { plannedWeightKg: result.data.weightKg, plannedReps: result.data.reps }
         : {}),
@@ -88,12 +97,17 @@ export async function updateSet(setId: string, formData: FormData): Promise<SetA
 }
 
 /**
- * "Apply to the rest": copy this set's weight × reps onto every later set in the
- * same exercise that hasn't been done yet. Those sets are still plans, so the
- * plan snapshot moves with them. Completed sets are never changed.
+ * "Apply to the rest": copy this set's weight × reps (and tempo, unless
+ * `includeTempo` is false) onto every later set in the same exercise that
+ * hasn't been done yet. Those sets are still plans, so the plan snapshot moves
+ * with them. Completed sets are never changed.
+ *
+ * Workout mode passes includeTempo: false — there the athlete only changed the
+ * numbers, so the trainer's tempo on later sets must stay as prescribed.
  */
 export async function applySetToRemaining(
-  setId: string
+  setId: string,
+  options: { includeTempo?: boolean } = {}
 ): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
   const set = await prisma.set.findUnique({
     where: { id: setId },
@@ -101,7 +115,9 @@ export async function applySetToRemaining(
       exercise: {
         include: {
           session: true,
-          sets: { select: { id: true, orderIndex: true, weightKg: true, reps: true, completedAt: true } },
+          sets: {
+            select: { id: true, orderIndex: true, weightKg: true, reps: true, completedAt: true, tempo: true },
+          },
         },
       },
     },
@@ -110,9 +126,11 @@ export async function applySetToRemaining(
   await assertClientAccess(set.exercise.session.clientId);
   if (set.exercise.session.finishedAt) return { ok: false, error: "This workout is finished." };
 
+  const includeTempo = options.includeTempo ?? true;
   const targets = findSetsToAutofill(set.exercise.sets, set.id, {
     weightKg: set.weightKg,
     reps: set.reps,
+    ...(includeTempo ? { tempo: set.tempo ?? null } : {}),
   });
   if (targets.length === 0) return { ok: true, updated: 0 };
 
@@ -124,6 +142,7 @@ export async function applySetToRemaining(
       reps: set.reps,
       plannedWeightKg: set.weightKg,
       plannedReps: set.reps,
+      ...(includeTempo ? { tempo: set.tempo ?? null } : {}),
     },
   });
   revalidateClientWorkoutViews(set.exercise.session.clientId);
@@ -210,6 +229,8 @@ export async function createPlannedSets(formData: FormData): Promise<CreateSetsB
   }
   const result = validateSetsBulk(formData.get("setsJson"));
   if (!result.ok) return { ok: false, errors: result.errors };
+  const tempoResult = parseTempo(formData.get("tempo"));
+  if (!tempoResult.ok) return { ok: false, errors: { tempo: tempoResult.error } };
 
   const exercise = await prisma.exercise.findUnique({
     where: { id: exerciseId.trim() },
@@ -229,6 +250,7 @@ export async function createPlannedSets(formData: FormData): Promise<CreateSetsB
       reps: row.reps,
       plannedWeightKg: row.weightKg,
       plannedReps: row.reps,
+      tempo: tempoResult.tempo,
       completedAt: null,
       orderIndex: maxOrderIndex + 1 + i,
     })),

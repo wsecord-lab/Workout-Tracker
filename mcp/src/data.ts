@@ -1,5 +1,15 @@
 import { prisma } from "./db";
 import { parseWarmupLines, WARMUP_ITEMS_MAX } from "../../src/lib/session-warmup";
+import { parseTempo } from "../../src/lib/tempo";
+
+/** Validate an AI-supplied tempo ("3-1-1", 0–10 or X per phase). Blank → null. */
+export function cleanTempo(input: string | null | undefined): string | null {
+  const parsed = parseTempo(input ?? null);
+  if (!parsed.ok) {
+    throw new Error(`Invalid tempo "${input}": ${parsed.error} Use eccentric-isometric-concentric, e.g. 3-1-1.`);
+  }
+  return parsed.tempo;
+}
 import { enforceWriteLimit, recordChange } from "./safeguards";
 import { aggregateProgress, kgToLb, rangeStart, type MetricsRangeKey } from "./metrics";
 import {
@@ -157,6 +167,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
               reps: true,
               plannedWeightKg: true,
               plannedReps: true,
+              tempo: true,
               completedAt: true,
               orderIndex: true,
             },
@@ -190,6 +201,7 @@ export async function getSession(trainer: TrainerContext, sessionId: string) {
         plannedWeightLb:
           s.plannedWeightKg != null ? kgToLb(s.plannedWeightKg) : null,
         plannedReps: s.plannedReps,
+        tempo: s.tempo,
         completed: s.completedAt != null,
       })),
     })),
@@ -385,6 +397,8 @@ export type PlannedExerciseInput = {
   /** Planned weight in pounds (UI units). */
   weightLb?: number;
   reps?: number;
+  /** "eccentric-isometric-concentric", e.g. "3-1-1". Applied to every planned set. */
+  tempo?: string;
 };
 
 export async function createPlannedSession(
@@ -405,6 +419,7 @@ export async function createPlannedSession(
   if (!name) throw new Error("sessionName is required.");
   const date = args.date ? new Date(`${args.date}T12:00:00.000Z`) : new Date();
   const warmup = cleanWarmupItems(args.warmup ?? []);
+  const tempos = args.exercises.map((ex) => cleanTempo(ex.tempo));
   await enforceWriteLimit(trainer);
 
   const session = await prisma.$transaction(async (tx) => {
@@ -457,6 +472,7 @@ export async function createPlannedSession(
             reps,
             plannedWeightKg: weightKg,
             plannedReps: reps,
+            tempo: tempos[i],
             completedAt: null,
             orderIndex: j,
           })),

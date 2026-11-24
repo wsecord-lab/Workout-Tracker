@@ -142,3 +142,19 @@ describe("findSetsToAutofill", () => {
     expect(findSetsToAutofill([row("a", 0, 75, 8)], "zzz", { weightKg: 1, reps: 1 })).toEqual([]);
   });
 });
+
+describe("findSetsToAutofill with tempo", () => {
+  const row = (id: string, orderIndex: number, tempo: string | null) => ({
+    id, orderIndex, weightKg: 80, reps: 8, completedAt: null, tempo,
+  });
+  const sets = [row("a", 0, "4-1-X"), row("b", 1, "3-1-1"), row("c", 2, "4-1-X"), row("d", 3, null)];
+
+  it("ignores tempo unless asked", () => {
+    expect(findSetsToAutofill(sets, "a", { weightKg: 80, reps: 8 })).toEqual([]);
+  });
+
+  it("compares tempo when given, treating missing as no tempo", () => {
+    expect(findSetsToAutofill(sets, "a", { weightKg: 80, reps: 8, tempo: "4-1-X" }).map((s) => s.id)).toEqual(["b", "d"]);
+    expect(findSetsToAutofill(sets, "a", { weightKg: 80, reps: 8, tempo: null }).map((s) => s.id)).toEqual(["b", "c"]);
+  });
+});

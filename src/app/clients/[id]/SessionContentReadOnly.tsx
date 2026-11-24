@@ -8,6 +8,7 @@ type CalendarSet = {
   reps: number;
   rpe: number | null;
   notes: string | null;
+  tempo?: string | null;
   exerciseId: string;
   plannedWeightKg: number | null;
   plannedReps: number | null;
@@ -33,10 +34,12 @@ function formatSetDisplay(set: {
   reps?: number | null;
   rpe?: number | null;
   notes?: string | null;
+  tempo?: string | null;
 }) {
   const kg = set.weightKg != null && Number.isFinite(set.weightKg) ? set.weightKg : 0;
   const reps = set.reps != null && Number.isFinite(set.reps) ? set.reps : 0;
   const parts = [`${formatWeight(kg)} × ${reps} reps`];
+  if (set.tempo) parts.push(`Tempo ${set.tempo}`);
   if (set.rpe != null && Number.isFinite(set.rpe)) parts.push(`RPE ${set.rpe}`);
   const notes = set.notes != null ? String(set.notes).trim() : "";
   if (notes) parts.push(notes);

@@ -402,7 +402,7 @@ describe("applySetToRemaining", () => {
     expect(result).toEqual({ ok: true, updated: 2 });
     expect(setUpdateMany).toHaveBeenCalledWith({
       where: { id: { in: ["s2", "s4"] }, exerciseId: "ex-1", completedAt: null },
-      data: { weightKg: 80, reps: 8, plannedWeightKg: 80, plannedReps: 8 },
+      data: { weightKg: 80, reps: 8, plannedWeightKg: 80, plannedReps: 8, tempo: null },
     });
   });
 
@@ -423,5 +423,99 @@ describe("applySetToRemaining", () => {
     const result = await applySetToRemaining("s1");
     expect(result.ok).toBe(false);
     expect(setUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("tempo", () => {
+  it("createPlannedSets stamps the tempo on every planned set", async () => {
+    const { createPlannedSets } = await import("./sets");
+    const form = new FormData();
+    form.set("exerciseId", "ex-1");
+    form.set("setsJson", JSON.stringify([{ weight: "185", reps: "5" }, { weight: "185", reps: "5" }]));
+    form.set("tempo", "3-1-x");
+
+    expect(await createPlannedSets(form)).toEqual({ ok: true });
+    const rows = setCreateMany.mock.calls[0][0].data;
+    expect(rows.map((r: { tempo: string | null }) => r.tempo)).toEqual(["3-1-X", "3-1-X"]);
+  });
+
+  it("createPlannedSets stores no tempo when it's left blank, and rejects a partial one", async () => {
+    const { createPlannedSets } = await import("./sets");
+    const form = new FormData();
+    form.set("exerciseId", "ex-1");
+    form.set("setsJson", JSON.stringify([{ weight: "185", reps: "5" }]));
+    await createPlannedSets(form);
+    expect(setCreateMany.mock.calls[0][0].data[0].tempo).toBeNull();
+
+    form.set("tempo", "3--1");
+    const result = await createPlannedSets(form);
+    expect(result.ok).toBe(false);
+    expect(setCreateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("updateSet changes tempo only when the form sends it", async () => {
+    setFindUnique.mockResolvedValue({ id: "s1", completedAt: null, exercise: { session: { clientId: "client-1" } } });
+    const { updateSet } = await import("./sets");
+    const form = new FormData();
+    form.set("weightLb", "195");
+    form.set("reps", "5");
+
+    await updateSet("s1", form);
+    expect("tempo" in setUpdate.mock.calls[0][0].data).toBe(false);
+
+    form.set("tempo", "4-0-1");
+    await updateSet("s1", form);
+    expect(setUpdate.mock.calls[1][0].data.tempo).toBe("4-0-1");
+
+    form.set("tempo", "");
+    await updateSet("s1", form);
+    expect(setUpdate.mock.calls[2][0].data.tempo).toBeNull();
+
+    form.set("tempo", "11-0-1");
+    const bad = await updateSet("s1", form);
+    expect(bad.ok).toBe(false);
+    expect(setUpdate).toHaveBeenCalledTimes(3);
+  });
+
+  function tempoSource() {
+    return {
+      id: "s1",
+      exerciseId: "ex-1",
+      weightKg: 80,
+      reps: 8,
+      tempo: "4-1-X",
+      completedAt: null,
+      exercise: {
+        session: { clientId: "client-1", finishedAt: null },
+        sets: [
+          { id: "s1", orderIndex: 0, weightKg: 80, reps: 8, tempo: "4-1-X", completedAt: null },
+          // Same numbers, different tempo: only changes when tempo is copied.
+          { id: "s2", orderIndex: 1, weightKg: 80, reps: 8, tempo: "3-1-1", completedAt: null },
+          { id: "s3", orderIndex: 2, weightKg: 75, reps: 8, tempo: "3-1-1", completedAt: null },
+        ],
+      },
+    };
+  }
+
+  it("applySetToRemaining copies tempo by default", async () => {
+    const { applySetToRemaining } = await import("./sets");
+    setFindUnique.mockResolvedValue(tempoSource());
+    setUpdateMany.mockResolvedValue({ count: 2 });
+
+    await applySetToRemaining("s1");
+    const call = setUpdateMany.mock.calls[0][0];
+    expect(call.where.id.in).toEqual(["s2", "s3"]);
+    expect(call.data.tempo).toBe("4-1-X");
+  });
+
+  it("applySetToRemaining leaves tempo alone in workout mode", async () => {
+    const { applySetToRemaining } = await import("./sets");
+    setFindUnique.mockResolvedValue(tempoSource());
+    setUpdateMany.mockResolvedValue({ count: 1 });
+
+    await applySetToRemaining("s1", { includeTempo: false });
+    const call = setUpdateMany.mock.calls[0][0];
+    expect(call.where.id.in).toEqual(["s3"]);
+    expect("tempo" in call.data).toBe(false);
   });
 });

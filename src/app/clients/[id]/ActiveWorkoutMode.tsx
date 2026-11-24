@@ -14,6 +14,7 @@ import { getFinishSkippedCopy } from "@/lib/workout-finish";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { WarmupChecklist, type SessionWarmupItem } from "./WarmupChecklist";
 import { WarmupDisplay } from "./WarmupSection";
+import { TempoBadge } from "./Tempo";
 
 type ExerciseWithSets = Exercise & { sets: PrismaSet[] };
 type WarmupBlock = {
@@ -443,7 +444,8 @@ export function ActiveWorkoutMode({
     );
     startAutofillTransition(async () => {
       await pendingCompletes.current.get(offer.setId);
-      await applySetToRemaining(offer.setId);
+      // Only the numbers changed here; later sets keep the trainer's tempo.
+      await applySetToRemaining(offer.setId, { includeTempo: false });
       router.refresh();
     });
   }
@@ -457,7 +459,7 @@ export function ActiveWorkoutMode({
           exerciseId,
           weightKg: toStorage(parseFloat(info.weightLb) || 0, "weight"),
           reps: parseInt(info.reps, 10) || 0,
-          rpe: null, notes: null,
+          rpe: null, notes: null, tempo: null,
           orderIndex: ex.sets.length,
           createdAt: new Date(),
           // Logged live in workout mode, so it counts as done. Mirrors createSet.
@@ -706,7 +708,8 @@ export function ActiveWorkoutMode({
                       {planned ? (
                         // Not done yet: empty boxes to fill in, target shown faintly.
                         // Checking off with the boxes blank logs the target.
-                        <div className="flex flex-1 items-center gap-1.5 min-w-0">
+                        <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="number" inputMode="decimal" step="0.1" min="0"
                             value={draft?.weight ?? ""}
@@ -726,6 +729,12 @@ export function ActiveWorkoutMode({
                             className="input w-24 px-2 py-1.5 text-sm placeholder:italic placeholder:opacity-50"
                           />
                         </div>
+                        {s.tempo && (
+                          <div className="mt-1.5">
+                            <TempoBadge tempo={s.tempo} compact describe />
+                          </div>
+                        )}
+                        </div>
                       ) : (
                         <span
                           role="button"
@@ -737,6 +746,11 @@ export function ActiveWorkoutMode({
                           {planNote && (
                             <span className="block text-xs font-normal text-amber-600 dark:text-amber-400">
                               {planNote}
+                            </span>
+                          )}
+                          {s.tempo && (
+                            <span className="mt-1 block">
+                              <TempoBadge tempo={s.tempo} compact />
                             </span>
                           )}
                         </span>

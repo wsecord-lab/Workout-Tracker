@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { cleanWarmupItems, normalizeSessionName } from "./data";
+import { cleanWarmupItems, cleanTempo, normalizeSessionName } from "./data";
 import { kgToLb } from "./metrics";
 import {
   assertSessionEditable,
@@ -83,6 +83,8 @@ type SetSnapshot = {
   reps: number;
   plannedWeightKg: number | null;
   plannedReps: number | null;
+  /** Missing on changes recorded before tempo existed. */
+  tempo?: string | null;
 };
 
 function sessionSnapshot(s: {
@@ -105,6 +107,7 @@ function setSnapshot(s: SetSnapshot): SetSnapshot {
     reps: s.reps,
     plannedWeightKg: s.plannedWeightKg,
     plannedReps: s.plannedReps,
+    tempo: s.tempo ?? null,
   };
 }
 
@@ -167,11 +170,12 @@ export async function updateSession(
 
 export async function updateSet(
   actor: Actor,
-  args: { setId: string; weightLb?: number; reps?: number }
+  args: { setId: string; weightLb?: number; reps?: number; tempo?: string }
 ) {
-  if (args.weightLb === undefined && args.reps === undefined) {
-    throw new Error("Nothing to change. Provide weightLb or reps.");
+  if (args.weightLb === undefined && args.reps === undefined && args.tempo === undefined) {
+    throw new Error("Nothing to change. Provide weightLb, reps or tempo.");
   }
+  const tempo = args.tempo !== undefined ? cleanTempo(args.tempo) : undefined;
   await enforceWriteLimit(actor);
 
   const set = await prisma.set.findFirst({
@@ -185,6 +189,7 @@ export async function updateSet(
       reps: true,
       plannedWeightKg: true,
       plannedReps: true,
+      tempo: true,
       completedAt: true,
       exercise: { select: { sessionId: true, session: { select: { finishedAt: true } } } },
     },
@@ -201,8 +206,14 @@ export async function updateSet(
   const { updated, changeId } = await prisma.$transaction(async (tx) => {
     const updated = await tx.set.update({
       where: { id: set.id },
-      data: { weightKg, reps, plannedWeightKg: weightKg, plannedReps: reps },
-      select: { id: true, weightKg: true, reps: true, plannedWeightKg: true, plannedReps: true },
+      data: {
+        weightKg,
+        reps,
+        plannedWeightKg: weightKg,
+        plannedReps: reps,
+        ...(tempo !== undefined ? { tempo } : {}),
+      },
+      select: { id: true, weightKg: true, reps: true, plannedWeightKg: true, plannedReps: true, tempo: true },
     });
     const change = await recordChange(tx, actor, {
       tool: "update_set",
@@ -220,16 +231,18 @@ export async function updateSet(
     setId: updated.id,
     weightLb: kgToLb(updated.weightKg),
     reps: updated.reps,
+    tempo: updated.tempo,
     note: "Use undo_ai_change with this changeId to revert.",
   };
 }
 
 export async function addExerciseToSession(
   actor: Actor,
-  args: { sessionId: string; name: string; sets?: number; weightLb?: number; reps?: number }
+  args: { sessionId: string; name: string; sets?: number; weightLb?: number; reps?: number; tempo?: string }
 ) {
   const name = args.name.trim();
   if (!name) throw new Error("name is required.");
+  const tempo = cleanTempo(args.tempo);
   await enforceWriteLimit(actor);
   const session = await findEditableSession(actor, args.sessionId);
 
@@ -255,6 +268,7 @@ export async function addExerciseToSession(
             reps: args.reps,
             plannedWeightKg: weightKg,
             plannedReps: args.reps,
+            tempo,
             completedAt: null,
             orderIndex: j,
           },
@@ -377,6 +391,7 @@ export async function undoChange(actor: Actor, changeId: string) {
         reps: true,
         plannedWeightKg: true,
         plannedReps: true,
+        tempo: true,
         completedAt: true,
         exercise: { select: { session: { select: { finishedAt: true } } } },
       },
@@ -384,7 +399,8 @@ export async function undoChange(actor: Actor, changeId: string) {
     if (!set) throw new Error("That set no longer exists.");
     assertSessionEditable(set.exercise.session);
     if (set.completedAt) throw new Error("This set was performed since the edit, so it is locked.");
-    if (!sameSnapshot(setSnapshot(set), change.after)) {
+    // Changes logged before tempo existed have no tempo key; those sets had none.
+    if (!sameSnapshot(setSnapshot(set), { tempo: null, ...(change.after as SetSnapshot) })) {
       throw new Error(
         "This set was changed again after the AI edit, so undo would overwrite newer changes. Nothing was changed."
       );
@@ -394,7 +410,7 @@ export async function undoChange(actor: Actor, changeId: string) {
       prisma.set.update({ where: { id: set.id }, data: before }),
       prisma.mcpChange.update({ where: { id: change.id }, data: { undoneAt: new Date() } }),
     ]);
-    return { undone: change.id, restored: "set weight and reps" };
+    return { undone: change.id, restored: "set weight, reps and tempo" };
   }
 
   // add_exercise_to_session: hide the exercise the AI added (soft removal, rows stay in the database).
