@@ -138,7 +138,7 @@ type SourceExercise = {
   name: string;
   catalogExerciseId: string | null;
   groupId: string | null;
-  sets: { weightKg: number; reps: number }[];
+  sets: { weightKg: number; reps: number; tempo?: string | null }[];
 };
 
 function newGroupId(): string {
@@ -173,6 +173,8 @@ function buildCopyRows(source: SourceExercise[], baseIndex: number) {
         reps: s.reps,
         plannedWeightKg: s.weightKg,
         plannedReps: s.reps,
+        // Tempo is part of the prescription, so it carries forward too.
+        tempo: s.tempo ?? null,
         completedAt: null,
         orderIndex: j,
       })),

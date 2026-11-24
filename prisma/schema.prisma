@@ -293,6 +293,9 @@ model Set {
   completedAt DateTime?
   rpe        Float?
   notes      String?
+  /// Prescribed tempo as "eccentric-isometric-concentric" seconds, e.g. "3-1-1" or "4-0-X".
+  /// Each part is 0–10 or X (explosive). Null = no tempo.
+  tempo      String?
   orderIndex Int      @default(0)
   exerciseId String
   exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)

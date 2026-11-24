@@ -90,17 +90,19 @@ export function formatPlanVsActual(s: SetLike): string | null {
 type OrderedSetLike = Pick<SetLike, "weightKg" | "reps" | "completedAt"> & {
   id: string;
   orderIndex: number;
+  tempo?: string | null;
 };
 
 /**
  * Sets that "apply to the rest" would change: the ones after `sourceId` in the
  * same exercise that haven't been done yet and don't already match `values`.
- * Completed sets are history and are never touched.
+ * Completed sets are history and are never touched. Tempo is only compared
+ * when `values.tempo` is given (null means "no tempo").
  */
 export function findSetsToAutofill<T extends OrderedSetLike>(
   sets: T[],
   sourceId: string,
-  values: { weightKg: number; reps: number }
+  values: { weightKg: number; reps: number; tempo?: string | null }
 ): T[] {
   const source = sets.find((s) => s.id === sourceId);
   if (!source) return [];
@@ -109,7 +111,11 @@ export function findSetsToAutofill<T extends OrderedSetLike>(
       s.id !== sourceId &&
       s.orderIndex > source.orderIndex &&
       isPlannedOnly(s) &&
-      !(sameWeight(s.weightKg, values.weightKg) && s.reps === values.reps)
+      !(
+        sameWeight(s.weightKg, values.weightKg) &&
+        s.reps === values.reps &&
+        (values.tempo === undefined || (s.tempo ?? null) === values.tempo)
+      )
   );
 }
 

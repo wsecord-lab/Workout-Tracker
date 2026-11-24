@@ -6,7 +6,9 @@ import type { Set } from "@prisma/client";
 import { deleteSet, updateSet, completeSet, uncompleteSet, applySetToRemaining } from "@/app/actions/sets";
 import { formatWeight, toDisplay, toStorage } from "@/lib/units";
 import { findSetsToAutofill, formatPlanVsActual, isPlannedOnly } from "@/lib/sets";
+import { joinTempo, parseTempo, splitTempo, type TempoParts } from "@/lib/tempo";
 import { DragHandle, type DragHandleProps } from "./DragHandle";
+import { TempoBadge, TempoSelects } from "./Tempo";
 
 function PencilIcon() {
   return (
@@ -50,13 +52,25 @@ export function SetRow({
   const [reps, setReps] = useState(String(set.reps));
   const [rpe, setRpe] = useState<number | "">(set.rpe ?? "");
   const [notes, setNotes] = useState(set.notes ?? "");
+  const [tempo, setTempo] = useState<TempoParts>(() => splitTempo(set.tempo));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
-  const [autofill, setAutofill] = useState<{ weightKg: number; reps: number } | null>(null);
+  const [autofill, setAutofill] = useState<
+    { weightKg: number; reps: number; tempo: string | null } | null
+  >(null);
   const router = useRouter();
 
-  const autofillCount =
-    autofill && exerciseSets ? findSetsToAutofill(exerciseSets, set.id, autofill).length : 0;
+  const autofillTargets =
+    autofill && exerciseSets ? findSetsToAutofill(exerciseSets, set.id, autofill) : [];
+  const autofillCount = autofillTargets.length;
+  // Name the tempo in the offer; if applying would wipe a tempo, say so.
+  const autofillTempoLabel = autofill?.tempo ? (
+    <>
+      , tempo <span className="whitespace-nowrap">{autofill.tempo}</span>
+    </>
+  ) : autofillTargets.some((t) => t.tempo) ? (
+    ", no tempo"
+  ) : null;
 
   function handleApplyToRest() {
     setAutofill(null);
@@ -68,11 +82,18 @@ export function SetRow({
 
   function handleSave() {
     setErrors({});
+    const tempoValue = joinTempo(tempo);
+    const tempoCheck = parseTempo(tempoValue);
+    if (!tempoCheck.ok) {
+      setErrors({ tempo: tempoCheck.error });
+      return;
+    }
     const formData = new FormData();
     formData.set("weightLb", weightLb.trim());
     formData.set("reps", reps.trim());
     formData.set("rpe", rpe === "" ? "" : String(rpe));
     formData.set("notes", notes.trim());
+    formData.set("tempo", tempoValue);
     startTransition(async () => {
       const result = await updateSet(set.id, formData);
       if (result.ok) {
@@ -80,7 +101,7 @@ export function SetRow({
         const w = parseFloat(weightLb);
         const r = parseInt(reps, 10);
         if (Number.isFinite(w) && Number.isInteger(r)) {
-          setAutofill({ weightKg: toStorage(w, "weight"), reps: r });
+          setAutofill({ weightKg: toStorage(w, "weight"), reps: r, tempo: tempoCheck.tempo });
         }
         return;
       }
@@ -93,6 +114,7 @@ export function SetRow({
     setReps(String(set.reps));
     setRpe(set.rpe ?? "");
     setNotes(set.notes ?? "");
+    setTempo(splitTempo(set.tempo));
     setEditing(false);
     setErrors({});
   }
@@ -145,6 +167,11 @@ export function SetRow({
               </span>
             )}
             {planNote && <span className="block text-xs text-amber-600 dark:text-amber-400">{planNote}</span>}
+            {set.tempo && (
+              <span className="mt-0.5 block">
+                <TempoBadge tempo={set.tempo} />
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -168,7 +195,7 @@ export function SetRow({
       {!editing && autofill && autofillCount > 0 && (
         <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-xs">
           <span className="flex-1 text-[var(--text)]">
-            Use {formatWeight(autofill.weightKg)} × {autofill.reps} for the
+            Use {formatWeight(autofill.weightKg)} × {autofill.reps}{autofillTempoLabel} for the
             {autofillCount === 1 ? " next set" : ` remaining ${autofillCount} sets`}?
           </span>
           <button
@@ -269,6 +296,16 @@ export function SetRow({
               />
               {errors.notes && <span className="text-xs text-error block">{errors.notes}</span>}
             </div>
+          </div>
+          <div className="sm:basis-full">
+            <TempoSelects
+              value={tempo}
+              onChange={setTempo}
+              idPrefix={`set-tempo-${set.id}`}
+              layout="inline"
+              disabled={isPending}
+            />
+            {errors.tempo && <span className="text-xs text-error block">{errors.tempo}</span>}
           </div>
           <div className="flex gap-2">
             <button

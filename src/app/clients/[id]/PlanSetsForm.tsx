@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPlannedSets } from "@/app/actions/sets";
+import { EMPTY_TEMPO, joinTempo, parseTempo, type TempoParts } from "@/lib/tempo";
+import { TempoSelects } from "./Tempo";
 
 /**
  * Prescribe N identical sets at a target weight × reps. The client checks them
@@ -14,6 +16,7 @@ export function PlanSetsForm({ exerciseId }: { exerciseId: string }) {
   const [count, setCount] = useState("3");
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
+  const [tempo, setTempo] = useState<TempoParts>([...EMPTY_TEMPO]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -25,10 +28,17 @@ export function PlanSetsForm({ exerciseId }: { exerciseId: string }) {
       setError("Plan between 1 and 10 sets.");
       return;
     }
+    const tempoValue = joinTempo(tempo);
+    const tempoCheck = parseTempo(tempoValue);
+    if (!tempoCheck.ok) {
+      setError(tempoCheck.error);
+      return;
+    }
     const rows = Array.from({ length: n }, () => ({ weight: weight.trim(), reps: reps.trim() }));
     const formData = new FormData();
     formData.set("exerciseId", exerciseId);
     formData.set("setsJson", JSON.stringify(rows));
+    formData.set("tempo", tempoValue);
 
     startTransition(async () => {
       const result = await createPlannedSets(formData);
@@ -38,6 +48,7 @@ export function PlanSetsForm({ exerciseId }: { exerciseId: string }) {
       }
       setWeight("");
       setReps("");
+      setTempo([...EMPTY_TEMPO]);
       setOpen(false);
       router.refresh();
     });
@@ -97,6 +108,14 @@ export function PlanSetsForm({ exerciseId }: { exerciseId: string }) {
             required
           />
         </div>
+      </div>
+      <TempoSelects
+        value={tempo}
+        onChange={setTempo}
+        idPrefix={`plan-tempo-${exerciseId}`}
+        disabled={isPending}
+      />
+      <div className="flex flex-wrap items-center gap-2">
         <button type="submit" disabled={isPending} className="btn-primary text-xs py-1 px-2">
           {isPending ? "…" : "Add Plan"}
         </button>

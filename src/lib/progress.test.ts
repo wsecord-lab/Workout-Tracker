@@ -14,6 +14,7 @@ function set(over: Partial<PrismaSet> = {}): PrismaSet {
     completedAt: done,
     rpe: null,
     notes: null,
+    tempo: null,
     orderIndex: 0,
     exerciseId: "ex-1",
     createdAt: done,

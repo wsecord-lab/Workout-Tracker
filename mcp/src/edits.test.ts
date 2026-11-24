@@ -206,6 +206,65 @@ describe("set_session_warmup", () => {
   });
 });
 
+describe("tempo via AI tools", () => {
+  const plannedSet = {
+    id: "set1",
+    weightKg: 50,
+    reps: 5,
+    plannedWeightKg: 50,
+    plannedReps: 5,
+    tempo: null,
+    completedAt: null,
+    exercise: { sessionId: "s1", session: { finishedAt: null } },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    m.prisma.mcpChange.count.mockResolvedValue(0);
+    m.tx.mcpChange.create.mockResolvedValue({ id: "chg-t" });
+  });
+
+  it("update_set can set tempo alone, normalized", async () => {
+    m.prisma.set.findFirst.mockResolvedValue(plannedSet);
+    m.tx.set.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...plannedSet, ...data }));
+    const res = await updateSet(client, { setId: "set1", tempo: "3/1/x" });
+    expect(res.tempo).toBe("3-1-X");
+    const logged = m.tx.mcpChange.create.mock.calls[0][0].data;
+    expect(logged.before.tempo).toBeNull();
+    expect(logged.after.tempo).toBe("3-1-X");
+  });
+
+  it("update_set rejects a bad tempo before writing", async () => {
+    m.prisma.set.findFirst.mockResolvedValue(plannedSet);
+    await expect(updateSet(client, { setId: "set1", tempo: "12-1-1" })).rejects.toThrow(/Invalid tempo/);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("add_exercise_to_session puts the tempo on each planned set", async () => {
+    m.prisma.workoutSession.findFirst.mockResolvedValue(openSession);
+    m.tx.exercise.findFirst.mockResolvedValue(null);
+    m.tx.exercise.create.mockResolvedValue({ id: "ex1" });
+    m.tx.set.create.mockResolvedValue({ id: "new-set" });
+    await addExerciseToSession(client, { sessionId: "s1", name: "RDL", sets: 2, weightLb: 135, reps: 8, tempo: "3-1-1" });
+    expect(m.tx.set.create.mock.calls.map((c) => (c[0] as { data: { tempo: string } }).data.tempo)).toEqual(["3-1-1", "3-1-1"]);
+  });
+
+  it("still undoes set edits recorded before tempo existed", async () => {
+    m.prisma.mcpChange.findFirst.mockResolvedValue({
+      id: "old",
+      tool: "update_set",
+      entityId: "set1",
+      undoneAt: null,
+      before: { weightKg: 45, reps: 5, plannedWeightKg: 45, plannedReps: 5 },
+      after: { weightKg: 50, reps: 5, plannedWeightKg: 50, plannedReps: 5 },
+    });
+    m.prisma.set.findFirst.mockResolvedValue(plannedSet);
+    const res = await undoChange(client, "old");
+    expect(res.undone).toBe("old");
+    expect(m.prisma.set.update.mock.calls[0][0].data.weightKg).toBe(45);
+  });
+});
+
 import { sameSnapshot } from "./safeguards";
 describe("sameSnapshot", () => {
   it("ignores key order (Postgres jsonb reorders keys) but not values", () => {
